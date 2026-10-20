@@ -1,9 +1,8 @@
-"""RAM guard, idle model unloading and the OpenAI-compatible (OpenVINO) embedding path."""
+"""RAM guard, the chat client settings and the OpenVINO Model Server embedding path."""
 import httpx
 
 from app.config import settings
 from app.core import indexer, ram
-from app.core.llm import idle
 from app.core.search import vector_search
 from app.db import sqlite_fts
 
@@ -37,29 +36,23 @@ def test_chat_client_has_a_timeout_and_no_silent_retries():
     assert client.timeout.read == settings.llm_timeout_s and client.timeout.connect == 5
 
 
-def test_idle_unload_timing(monkeypatch):
+def test_chat_requests_switch_thinking_off(monkeypatch):
+    from app.core.llm.client import _without_thinking, get_client
+
     calls = []
-    monkeypatch.setattr(settings, "llm_idle_unload_s", 600)
-    monkeypatch.setattr(idle.httpx, "post", lambda url, json, timeout: calls.append(json))
-    idle._last_used = None
-    assert not idle._due(10_000)  # never used: nothing loaded by us
-    idle.touch()
-    t = idle._last_used
-    assert not idle._due(t + 599)
-    assert idle._due(t + 601)
-    assert idle.unload() and calls[-1]["keep_alive"] == 0
-    assert not idle._due(t + 10_000)  # after unloading, wait for the next use
+    create = _without_thinking(lambda *a, **kw: calls.append(kw))
+    create(model="chat", messages=[])
+    assert calls[-1]["extra_body"]["chat_template_kwargs"] == {"enable_thinking": False}
+    create(model="chat", messages=[], extra_body={"top_k": 5})
+    assert calls[-1]["extra_body"] == {"top_k": 5, "chat_template_kwargs": {"enable_thinking": False}}  # caller's top_k kept
+    monkeypatch.setattr(settings, "ov_disable_thinking", False)
+    create(model="chat", messages=[])
+    assert "chat_template_kwargs" not in calls[-1]["extra_body"]  # top_k is still sent
+    assert get_client().chat.completions.create.__name__ == "create_no_think"
 
 
-def test_idle_unload_can_be_disabled(monkeypatch):
-    monkeypatch.setattr(settings, "llm_idle_unload_s", 0)
-    idle.touch()
-    assert not idle._due(idle._last_used + 1e9)
-
-
-def test_openai_compatible_embeddings(monkeypatch):
-    monkeypatch.setattr(settings, "llm_provider", "openai")
-    monkeypatch.setattr(settings, "ollama_base_url", "http://127.0.0.1:9000/v3")
+def test_ovms_embeddings(monkeypatch):
+    monkeypatch.setattr(settings, "ov_base_url", "http://127.0.0.1:9000/v3")
     seen = {}
 
     def handler(request: httpx.Request):

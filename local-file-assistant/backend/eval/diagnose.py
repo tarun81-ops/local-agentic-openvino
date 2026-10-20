@@ -58,23 +58,22 @@ def main() -> int:
     if not cfg.get("read_content"):
         cause("'Read file contents' is off, so only names are searched, never what is inside.")
 
-    # 2. Ollama
-    section("2. Local model server (Ollama)")
-    try:
-        import httpx
+    # 2. OpenVINO Model Server
+    section("2. Local model server (OpenVINO Model Server)")
+    from app.core.llm.client import current_model, server_status
 
-        r = httpx.get(settings.ollama_url.rstrip("/") + "/api/tags", timeout=4)
-        names = [m.get("name", "") for m in r.json().get("models", [])]
-        show("PASS", "Ollama reachable", f"{len(names)} model(s)")
-        for want in (settings.ollama_model, settings.embedding_model):
-            if any(n == want or n.startswith(want) for n in names):
-                show("PASS", f"model installed: {want}")
+    st = server_status()
+    if st["connected"]:
+        show("PASS", "OVMS reachable", f"{len(st['models'])} model(s) at {settings.ov_base_url}")
+        for want in (current_model(), settings.embedding_model):
+            if want in st["models"]:
+                show("PASS", f"model served: {want}")
             else:
-                show("FAIL", f"model missing: {want}", "run: ollama pull " + want)
-                cause(f"Model {want} is not installed in Ollama.")
-    except Exception as exc:
-        show("FAIL", "Ollama not reachable", str(exc)[:120])
-        cause("Ollama is not running (start it, then retry). Without it nothing can plan or answer.")
+                show("FAIL", f"model missing: {want}", r"run: scripts\ovms-export.ps1, then restart OVMS")
+                cause(f"OVMS does not serve a model named {want}.")
+    else:
+        show("FAIL", "OVMS not reachable", str(st.get("error", ""))[:120])
+        cause(r"OpenVINO Model Server is not running (scripts\ovms-start.ps1). Without it nothing can plan or answer.")
 
     # 2b. OCR
     section("2b. OCR (needed for scanned PDFs and photos)")

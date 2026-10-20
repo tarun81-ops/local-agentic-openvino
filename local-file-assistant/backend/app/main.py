@@ -7,10 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import routes_actions, routes_chat, routes_collections, routes_context, routes_conversations, routes_events, routes_files, routes_find, routes_forms, routes_learning, routes_memory, routes_organize, routes_pc, routes_personalize, routes_proactive, routes_search, routes_settings, routes_study, routes_tasks, routes_voice
 from app.config import settings
-from app.core import pc_access, pc_content
+from app.core import doc_photos, pc_access, pc_content
 from app.core.assistant import memory_store, scheduler
-from app.core.llm import idle
 from app.core.watcher import watcher
+from app.core.llm import ovms_runner
 from app.db import assistant_db
 from app.security import make_guard, resolve_token
 
@@ -37,8 +37,8 @@ _setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     assistant_db.migrate()
+    ovms_runner.ensure_running_async()  # the model server, so no terminal has to stay open; never delays startup
     watcher.start()
-    idle.start()
     # Memories come only from "remember that ..." in chat. Facts the model used to guess from chats
     # waited in a review queue as "pending" and were never used; that queue is gone, so clear it.
     memory_store.drop_pending()
@@ -52,12 +52,14 @@ async def lifespan(app: FastAPI):
             logging.getLogger(__name__).info("rebuilding the index for %d folder(s)", len(pending))
         pc_access.crawler.start_if_stale()  # whole-PC name catalog: only runs if the user switched it on
         pc_content.worker.start()  # reads file contents of those drives in the background (idles while PC access is off)
+        doc_photos.worker.start()  # names-only: OCRs each photo once so document photos (IMG-...jpg marksheets) can be found
     yield
     pc_content.worker.stop()
+    doc_photos.worker.stop()
     pc_access.crawler.stop()
     scheduler.stop()
-    idle.stop()
     watcher.stop()
+    ovms_runner.stop()
 
 
 app = FastAPI(title="Local File Assistant", lifespan=lifespan)

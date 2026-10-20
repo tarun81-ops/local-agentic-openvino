@@ -1,7 +1,7 @@
 # Architecture
 
-Electron shell (ui/) around a FastAPI backend (backend/) that talks to Ollama on
-localhost. One local model plays several roles through different prompts; everything
+Electron shell (ui/) around a FastAPI backend (backend/) that talks to OpenVINO Model
+Server on localhost. One local model plays several roles through different prompts; everything
 else is plain deterministic code.
 
 ## Processes
@@ -53,7 +53,7 @@ old path, all debounced and run on one worker thread.
 
 - **Search** (`core/search/`): FTS5 with stopwords dropped and terms ORed (bm25 ranks),
   plus vector search, fused with Reciprocal Rank Fusion. Keyword search always works;
-  semantic search is skipped if Ollama is slow or down.
+  semantic search is skipped if the model server is slow or down.
 - **Answerer** (`core/llm/answerer.py`) streams an answer from the top chunks, citing
   labels like `(report.pdf, page 2)`.
 - **Verifier** (`core/llm/verifier.py`, no LLM call) checks each citation points at a
@@ -69,10 +69,10 @@ they happen (`undo_log.jsonl`) and can be undone per batch; deletes go to the Re
 
 ## Model backend
 
-Ollama's OpenAI-compatible `/v1` API. `LLM_PROVIDER=openai` sends chat and embeddings to any
-OpenAI-compatible server instead, e.g. OpenVINO Model Server on the NPU (docs/OPENVINO.md).
-The model can be changed on the Settings page. The chat model is unloaded from Ollama after
-`LLM_IDLE_UNLOAD_S` (default 600 s) without questions; the embedder after 2 minutes.
+OpenVINO Model Server's OpenAI-compatible `/v3` API (`OV_BASE_URL`), on the NPU, iGPU or CPU
+(docs/OPENVINO.md). Chat and embeddings use the model names `chat` and `embed`, set at export
+time. The model can be changed on the Settings page. OVMS keeps models loaded; only voice models
+unload after `LLM_IDLE_UNLOAD_S`.
 
 ## Measuring quality
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 
 # The app's role, sent as the system message in both chat and file answers. Kept short (about 70
-# words, paid on every question on CPU) and word-for-word stable so Ollama can reuse its cached prefix;
+# words, paid on every question on CPU) and word-for-word stable so the model server can reuse its cached prefix;
 # only the date line at the end changes, once a day.
 ROLE = (
     "You are Local Agent, a private assistant on this PC that specialises in organising files: "

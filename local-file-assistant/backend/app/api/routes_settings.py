@@ -3,7 +3,8 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.core import ram
-from app.core.llm.client import current_model, ollama_status, set_model
+from app.core.llm import ovms_runner
+from app.core.llm.client import current_model, server_status, set_model
 from app.core.parsers import PARSERS
 from app.core.search import reranker
 
@@ -19,20 +20,20 @@ def get_settings():
     return {
         "model": current_model(),
         "embedding_model": settings.embedding_model,
-        "base_url": settings.ollama_base_url,
+        "base_url": settings.ov_base_url,
         "data_dir": str(settings.data_dir),
         "file_types": sorted(PARSERS),
         "reranker": settings.rerank_model if reranker.available() else "",  # "" = off or not downloaded
-        "ollama": ollama_status(),
-        "provider": settings.llm_provider,
+        "server": {**server_status(), "autostart": ovms_runner.status()},
+        "provider": "openvino",
         "memory": ram.status(),
     }
 
 
 @router.put("/model")
 def change_model(req: ModelRequest):
-    status = ollama_status()
+    status = server_status()
     if status["connected"] and req.model not in status["models"]:
-        raise HTTPException(status_code=400, detail=f"{req.model} isn't pulled in Ollama. Run: ollama pull {req.model}")
+        raise HTTPException(status_code=400, detail=f"{req.model} isn't served by OpenVINO Model Server. Export it with scripts\\ovms-export.ps1 and restart OVMS.")
     set_model(req.model)
     return {"model": req.model}

@@ -12,10 +12,9 @@ sudo apt install -y git python3 python3-venv python3-pip curl build-essential
 # Node 20 or newer (Vite 8 needs it); Ubuntu's own nodejs is too old
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
-# Ollama, then the two models
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen3-vl:2b-instruct
-ollama pull granite-embedding:278m
+# OpenVINO Model Server and the two models: see docs/OPENVINO.md
+# (Linux: OVMS release package or its Docker image; export with demos/common/export_models,
+#  --model_name chat and --model_name embed)
 ```
 
 Ubuntu 22.04 only has Python 3.10, which is too old (onnxruntime needs 3.11+). Either upgrade to

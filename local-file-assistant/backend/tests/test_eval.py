@@ -1,4 +1,4 @@
-"""The eval harness's scoring (the model run itself needs Ollama: eval/run_eval.py)."""
+"""The eval harness's scoring (the model run itself needs OpenVINO Model Server: eval/run_eval.py)."""
 import sys
 from pathlib import Path
 

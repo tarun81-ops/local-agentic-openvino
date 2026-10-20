@@ -28,11 +28,12 @@ from typing import Callable
 
 from app.config import settings
 from app.core import fuzzy, prefs
+from app.core.words import strip_non_word, words
 
 log = logging.getLogger(__name__)
 
 PREF = "pc_access"
-FTS_VERSION = 3  # bump when _fts_text changes (3: Devanagari names also carry their Latin spelling)
+FTS_VERSION = 4  # bump when _fts_text or the tokenizer changes (3: Devanagari names also carry their Latin spelling; 4: Hindi words stay whole)
 RESCAN_AFTER_S = 12 * 3600  # at startup, rescan if the last full scan is older than this
 
 # Never entered. Compared lower-cased against each folder name.
@@ -257,7 +258,7 @@ def connect() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, name TEXT NOT NULL, folder TEXT NOT NULL,
             ext TEXT NOT NULL, size INTEGER, mtime REAL, scan INTEGER);
         CREATE INDEX IF NOT EXISTS catalog_scan ON catalog(scan);
-        CREATE VIRTUAL TABLE IF NOT EXISTS catalog_fts USING fts5(name, folder, tokenize='unicode61 remove_diacritics 2');
+        CREATE VIRTUAL TABLE IF NOT EXISTS catalog_fts USING fts5(name, folder, tokenize="unicode61 remove_diacritics 2 categories 'L* N* Co Mn Mc'");
         CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
         CREATE VIRTUAL TABLE IF NOT EXISTS catalog_vocab USING fts5vocab(catalog_fts, 'row');
         """
@@ -265,7 +266,15 @@ def connect() -> sqlite3.Connection:
     if _meta(conn, "fts_version") != str(FTS_VERSION):
         # The name-text rules changed: start the list over (the next scan refills it; nothing on disk is touched).
         conn.execute("DELETE FROM catalog")
-        conn.execute("DELETE FROM catalog_fts")
+        # Recreated, not just emptied: a tokenizer change only applies to a newly created FTS table.
+        conn.executescript(
+            """
+            DROP TABLE IF EXISTS catalog_vocab;
+            DROP TABLE IF EXISTS catalog_fts;
+            CREATE VIRTUAL TABLE catalog_fts USING fts5(name, folder, tokenize="unicode61 remove_diacritics 2 categories 'L* N* Co Mn Mc'");
+            CREATE VIRTUAL TABLE catalog_vocab USING fts5vocab(catalog_fts, 'row');
+            """
+        )
         conn.execute("DELETE FROM meta WHERE k='last_scan'")
         _set_meta(conn, "fts_version", FTS_VERSION)
         conn.commit()
@@ -438,7 +447,7 @@ def scan(roots: list[str], cancel: threading.Event | None = None, on_progress: C
 def keywords(text: str) -> list[str]:
     """Search words from a sentence: lower-cased, stop words dropped, a plural 's' trimmed."""
     out = []
-    for w in re.findall(r"[^\W_]+", text.lower()):
+    for w in (x for part in words(text.lower()) for x in part.split("_") if x):  # Hindi words whole; "_" splits
         if w in _STOP or len(w) < 2:
             continue
         if len(w) > 4 and w.endswith("s") and not w.endswith("ss"):
@@ -516,7 +525,7 @@ def find(terms: list[str], exts: list[str] | None = None, modified_after: float 
     """File-name search over the catalog: every term must match (prefix match on name or folder
     words); if that finds nothing, any term may match. Credentials and vanished files are filtered out.
     Folders are returned only with folders=True (Find); Chat and forms read files, so they never get one."""
-    terms = [re.sub(r"[^\w]", "", t) for t in terms]
+    terms = [strip_non_word(t) for t in terms]  # keeps Devanagari vowel signs (the catalog keeps them too)
     terms = [t for t in terms if t]
     if not terms:
         return []

@@ -88,8 +88,8 @@ export function renderSidebar(root, { active, onSelect, onNewChat, recent, onOpe
       el('div', { class: 'status-dot' }),
       el(
         'div',
-        { class: 'status-text', title: status.connected ? `Ollama — ${status.model}` : 'Ollama is not running' },
-        status.connected ? (status.model || '') : 'Ollama — not running',
+        { class: 'status-text', title: status.connected ? `OpenVINO — ${status.model}` : 'OpenVINO Model Server is not running' },
+        status.connected ? (status.model || '') : 'OpenVINO — not running',
       ),
       el('div', { class: 'tag-local' }, 'Local'),
     ),

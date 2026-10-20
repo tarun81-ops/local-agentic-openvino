@@ -5,7 +5,7 @@
     pip install pytest playwright   (then: python -m playwright install chromium)
     pytest tests
 
-Every API call is answered by page.route below, so no backend or Ollama is needed. The tests skip
+Every API call is answered by page.route below, so no backend or model server is needed. The tests skip
 if Playwright or ui/dist is missing."""
 import functools
 import http.server
@@ -57,7 +57,7 @@ def stub(navigate_to=None, delays=None):
 # Reply shapes copied from the real backend, with empty data.
 DEFAULTS = {
     "/health": {"ok": True},
-    "/settings": {"model": "", "ollama": {"connected": False, "models": []}, "memory": {"free_mb": 4000, "total_mb": 16000, "low": False}},
+    "/settings": {"model": "", "server": {"connected": False, "models": []}, "memory": {"free_mb": 4000, "total_mb": 16000, "low": False}},
     "/conversations": {"conversations": []},
     "/collections": {"collections": []},
     "/files/roots": {"roots": []},

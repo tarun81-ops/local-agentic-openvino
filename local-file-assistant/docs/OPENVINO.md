@@ -1,51 +1,102 @@
-# Running on the NPU / iGPU with OpenVINO Model Server (experimental)
+# OpenVINO Model Server (the app's only model backend)
 
-The backend talks to its model server through an OpenAI-compatible API, so Ollama can be
-swapped for **OpenVINO Model Server (OVMS)**, which can run models on the Core Ultra's NPU
-or integrated GPU. This is a prototype path: the switch is built and unit-tested, but it
-has not yet been benchmarked on the Vivobook. Measure before and after with `eval\run_eval.py`.
+On the `openvino-support` branch the app runs its models with **OpenVINO Model Server (OVMS)**
+on the Core Ultra's NPU, integrated GPU or CPU. Ollama is gone from this branch (it still
+lives on `main`). Design and decisions: [OPENVINO-DESIGN.md](OPENVINO-DESIGN.md) and
+[decisions/0002-openvino-only.md](decisions/0002-openvino-only.md).
 
-## 1. Export models for OVMS
+## 1. Install OVMS (once)
 
-Follow OVMS's `export_models` demo (github.com/openvinotoolkit/model_server,
-`demos/common/export_models`). In a separate Python venv:
-
-```powershell
-# A small instruct model, int4, for the NPU (pick one listed as NPU-supported in the OVMS docs)
-python export_model.py text_generation --source_model <hf-model-id> --weight-format int4 --target_device NPU --config_file_path models\config.json --model_repository_path models
-# An embedding model (CPU or GPU is fine; the NPU needs a fixed --max_length)
-python export_model.py embeddings_ov --source_model <hf-embedding-id> --pooling CLS --config_file_path models\config.json --model_repository_path models
-```
-
-## 2. Start OVMS
+Install the Microsoft Visual C++ Redistributable (aka.ms/vs/17/release/VC_redist.x64.exe), then download
+the Windows package **with Python** into your user folder (no admin rights needed; `C:\` itself is not
+writable). The `python_off` package drops the system message from chat prompts, and this app relies on it.
 
 ```powershell
-ovms --rest_port 8000 --config_path models\config.json
+cd $env:LOCALAPPDATA
+curl.exe -L https://github.com/openvinotoolkit/model_server/releases/download/v2026.4.0/ovms_windows_2026.4.0_python_on.zip -o ovms.zip
+tar -xf ovms.zip            # creates %LOCALAPPDATA%\ovms
+.\ovms\setupvars.ps1        # needed in every new PowerShell window before running ovms
+ovms --version
+``` Check the devices
+OpenVINO sees:
+
+```powershell
+python -m pip install openvino
+python -c "import openvino as ov; print(ov.Core().available_devices)"   # expect CPU, GPU, NPU
 ```
 
-OVMS serves `http://localhost:8000/v3/chat/completions` and `/v3/embeddings`.
+If NPU is missing, update the Intel NPU driver first.
 
-## 3. Point the app at it
+## 2. Export the models (once)
 
-In `backend\.env`:
-
-```
-LLM_PROVIDER=openai
-OLLAMA_BASE_URL=http://localhost:8000/v3
-OLLAMA_MODEL=<the model name from config.json>
-EMBEDDING_MODEL=<the embedding model name from config.json>
+```powershell
+scripts\ovms-export.ps1                     # chat on the iGPU (int4), embeddings on CPU
+scripts\ovms-export.ps1 -ChatDevice NPU     # or: chat on the NPU
 ```
 
-Then restart the app and **rescan** your folders: vectors from a different embedding
-model aren't comparable with the old ones. (Remove the folder and add it again, or delete
-the `lancedb` folder in `%APPDATA%\LocalFileAssistant`.)
+The models are saved in `%APPDATA%\LocalFileAssistant\ovms\models` under the names **chat** and
+**embed**, which are the app's defaults, so trying another model never needs a config change.
 
-## What changes with `LLM_PROVIDER=openai`
+## 3. Start OVMS
 
-- Chat: same OpenAI client, different base URL.
-- Embeddings: `POST {OLLAMA_BASE_URL}/embeddings` instead of Ollama's `/api/embed`.
-- Model list / connection status: `GET {OLLAMA_BASE_URL}/models`. If your OVMS version
-  doesn't serve that, Settings shows "not running" even though answers work.
-- Idle unloading (`LLM_IDLE_UNLOAD_S`) only applies to Ollama; OVMS keeps models loaded.
-- Qwen3 models may need thinking turned off (`chat_template_kwargs: {"enable_thinking": false}`)
-  for short, direct answers; not wired up yet.
+**The app now starts OVMS by itself** (Windows): when the backend starts and OVMS isn't answering, it runs
+`%LOCALAPPDATA%\ovms\ovms.exe` hidden in the background with the flags below, and stops it when the app closes.
+Its output goes to `%APPDATA%\LocalFileAssistant\logs\ovms.log`. Set `OVMS_AUTOSTART=false` in `backend\.env` to
+start it yourself, or `OVMS_DIR=` if you unpacked OVMS somewhere else. To start it by hand:
+
+```powershell
+scripts\ovms-start.ps1
+```
+
+It listens on `http://127.0.0.1:8000/v3` only. The first start on NPU/GPU compiles the model
+(can take a minute); later starts use the cache.
+
+## 4. Start the app
+
+```powershell
+cd ui; npm run dev
+```
+
+`backend\.env` (copied from `.env.example` by setup):
+
+```
+OV_BASE_URL=http://127.0.0.1:8000/v3
+OV_CHAT_MODEL=chat
+EMBEDDING_MODEL=embed
+```
+
+After changing the embedding model, **rescan** your folders once: vectors from different
+embedding models don't match.
+
+## Good to know
+
+- OVMS keeps models loaded. The app no longer unloads the chat model when idle; voice models
+  still unload after `LLM_IDLE_UNLOAD_S`.
+- Settings > Model lists what `GET /v3/models` returns. If your OVMS version doesn't serve that,
+  Settings shows "not running" although answers work.
+- Image captions (`CAPTION_IMAGES=true`) need a vision model exported as "chat".
+- Qwen3 models may need thinking switched off for short answers; not wired up yet.
+- Not benchmarked yet: compare devices with `backend\eval\run_eval.py` (plan in OPENVINO-DESIGN.md).
+
+## Server settings that matter (from the failure-mode research, Oct 2026)
+
+- **Embedding pooling must be LAST** for Qwen3-Embedding. OVMS defaults to CLS, and with CLS nothing errors but
+  search quality drops badly. Check: open `%APPDATA%\LocalFileAssistant\ovms\models\OpenVINO\Qwen3-Embedding-0.6B-int8-ov\graph.pbtxt`
+  and look for `pooling: LAST`. If it is missing, re-run the embedding `--pull` with `--pooling LAST`.
+- **Long inputs are refused, not cut.** The app now cuts embedding inputs to `EMBED_MAX_CHARS` (4000) and retries an
+  answer with fewer passages when OVMS says the prompt is too long.
+- **Cap the memory the chat model may take** (the KV cache otherwise grows with use on 16 GB shared RAM):
+  ```powershell
+  & "$env:LOCALAPPDATA\ovms\setupvars.ps1"
+  $models = "$env:APPDATA\LocalFileAssistant\ovms\models"
+  ovms --configure --model_path "$models\OpenVINO\Qwen3-1.7B-int4-ov" --task text_generation --target_device GPU --cache_size 2 --cache_dir "$env:APPDATA\LocalFileAssistant\ovms\cache"
+  ```
+  Then restart OVMS. `--cache_size` is in GB; 2 is a starting point, not a measured value.
+- **Sampling** is set by the app on every request (`OV_TEMPERATURE` 0.7, `OV_TOP_P` 0.8, `OV_TOP_K` 20,
+  `OV_PRESENCE_PENALTY` 1.0, Qwen's non-thinking values); JSON plans use 0.2.
+- **Search questions** get Qwen3-Embedding's `Instruct: ...\nQuery:` prefix (`EMBED_QUERY_INSTRUCT`); documents don't.
+- **/v1 vs /v3:** OVMS 2026.3+ also serves `/v1`; `/v3` is kept as an alias for now. If a future OVMS drops it,
+  set `OV_BASE_URL=http://127.0.0.1:8000/v1`.
+- **NPU:** `OpenVINO/Qwen3-1.7B-int4-ov` is INT4 asymmetric (group 128) and is not NPU-compatible; an NPU model needs
+  symmetric INT4, ratio 1.0, group size -1, and handles one request at a time.
+

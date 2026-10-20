@@ -5,9 +5,9 @@ services:
       # 127.0.0.1 on the left: reachable only from this PC, never from the network
       - "127.0.0.1:8756:8756"
     environment:
-      # Ollama runs on Windows (model already downloaded there), not in Docker
-      OLLAMA_URL: http://host.docker.internal:11434
-      OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
+      # OpenVINO Model Server runs on Windows (it needs the NPU/iGPU drivers), not in Docker.
+      # Start it with --rest_bind_address 0.0.0.0 only if you use this compose file.
+      OV_BASE_URL: http://host.docker.internal:8000/v3
       API_TOKEN: ${API_TOKEN:-change-me-please}
     extra_hosts:
       - "host.docker.internal:host-gateway"

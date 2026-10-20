@@ -1,7 +1,7 @@
 """"Find that file": search by description ("the electricity bill from last month", "my internship
 offer letter") and get the files back, best first, each with the reason it matched.
 
-No model of any kind is used (no chat model, no embeddings), so it answers fast even while Ollama is
+No model of any kind is used (no chat model, no embeddings), so it answers fast even while the model server is
 busy. The description is turned into search words, a file-type filter and a date window by rules,
 then three lookups are merged:
   1. file names in the whole-PC catalog (when PC access is on),
@@ -225,7 +225,7 @@ def _from_index_names(plan: dict) -> list[str]:
 
 def _from_content(description: str, plan: dict) -> tuple[list[dict], bool]:
     """Keyword search over the text of indexed files. Keyword only on purpose: semantic search needs
-    the embedding model, which can take seconds when Ollama is busy, and Find must stay instant."""
+    the embedding model, which can take seconds when the model server is busy, and Find must stay instant."""
     from app.core.search import fts_search
     from app.core.search.hybrid import snippet
 

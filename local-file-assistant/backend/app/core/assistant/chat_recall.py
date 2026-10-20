@@ -18,6 +18,7 @@ from app.config import settings
 from app.core import ram
 from app.core.search import vector_search
 from app.db import assistant_db
+from app.core.words import words
 
 log = logging.getLogger(__name__)
 
@@ -31,9 +32,9 @@ _STOP = {"the", "and", "for", "what", "which", "who", "how", "you", "your", "are
 _embed_lock = threading.Lock()
 
 
-def _embed(texts: list[str]) -> list[bytes | None]:
+def _embed(texts: list[str], query: bool = False) -> list[bytes | None]:
     try:
-        return [np.asarray(v, dtype=np.float32).tobytes() for v in vector_search.embed(texts, timeout=EMBED_TIMEOUT)]
+        return [np.asarray(v, dtype=np.float32).tobytes() for v in (vector_search.embed_query if query else vector_search.embed)(texts, timeout=EMBED_TIMEOUT)]
     except Exception as exc:  # no embedder: keyword recall still works, vectors are filled in later
         log.warning("chat recall embedding skipped: %s", exc)
         return [None] * len(texts)
@@ -117,12 +118,12 @@ def recall(query: str, exclude_conv: int | None = None, k: int | None = None) ->
     try:
         sync(conn)
         fts_rank: dict[int, int] = {}
-        terms = [t for t in re.findall(r"\w+", query.lower()) if len(t) > 2 and t not in _STOP]
+        terms = [t for t in words(query.lower()) if len(t) > 2 and t not in _STOP]  # Hindi words stay whole
         if terms:
             match = " OR ".join(f'"{t}"' for t in terms)
             rows = conn.execute("SELECT rowid FROM chat_index_fts WHERE chat_index_fts MATCH ? AND rowid IN (SELECT msg_id FROM chat_index WHERE conv_id != ?) ORDER BY rank LIMIT 20", (match, skip_conv))
             fts_rank = {r[0]: i for i, r in enumerate(rows)}
-        [qblob] = _embed([query])
+        [qblob] = _embed([query], query=True)
         vec_rank: dict[int, int] = {}
         if qblob:
             rows = conn.execute("SELECT msg_id, embedding FROM chat_index WHERE embedding IS NOT NULL AND embed_model = ? AND conv_id != ?", (settings.embedding_model, skip_conv)).fetchall()

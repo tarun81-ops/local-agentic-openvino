@@ -4,7 +4,7 @@ the router, the date reader or the memory filter shows up as a number instead of
     cd backend
     .venv\\Scripts\\python.exe eval\\assistant_eval.py
 
-Needs no Ollama. Exit code 1 if any case fails. When a real phrase is misread, add it to a table."""
+Needs no model server. Exit code 1 if any case fails. When a real phrase is misread, add it to a table."""
 import os
 import sys
 import tempfile

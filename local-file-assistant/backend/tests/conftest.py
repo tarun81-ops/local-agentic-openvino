@@ -1,5 +1,5 @@
-"""Test setup: every test run gets its own data dir and a fixed API token, and the Ollama
-embedder is replaced by a deterministic bag-of-words hash so tests run without Ollama."""
+"""Test setup: every test run gets its own data dir and a fixed API token, and the OVMS
+embedder is replaced by a deterministic bag-of-words hash so tests run without a model server."""
 import hashlib
 import os
 import re
@@ -29,7 +29,7 @@ import pytest  # noqa: E402
 import app.core.indexer as _indexer  # noqa: E402
 import app.core.search.vector_search as _vector_search  # noqa: E402
 
-REAL_EMBED = _vector_search.embed  # for tests that talk to a real Ollama
+REAL_EMBED = _vector_search.embed  # for tests that talk to a real OVMS
 CORPUS = Path(__file__).resolve().parents[2] / "test_corpus"
 DIM = 64
 
@@ -37,6 +37,8 @@ DIM = 64
 def fake_embed(texts, timeout=None):
     vectors = []
     for text in texts:
+        if text.startswith("Instruct: ") and "\nQuery:" in text:  # a real embedder reads the instruction, it isn't content
+            text = text.split("\nQuery:", 1)[1]
         v = [0.0] * DIM
         for word in re.findall(r"\w+", text.lower()):
             v[int(hashlib.md5(word.encode()).hexdigest(), 16) % DIM] += 1.0
@@ -46,7 +48,7 @@ def fake_embed(texts, timeout=None):
 
 
 @pytest.fixture(autouse=True)
-def _no_ollama(monkeypatch):
+def _no_model_server(monkeypatch):
     monkeypatch.setattr(_indexer, "embed", fake_embed)
     monkeypatch.setattr(_vector_search, "embed", fake_embed)
 
@@ -65,3 +67,12 @@ def corpus(tmp_path) -> Path:
 @pytest.fixture
 def db_paths(tmp_path):
     return tmp_path / "index.db", tmp_path / "lancedb"
+
+
+@pytest.fixture(autouse=True)
+def _no_background_card_scan(monkeypatch):
+    """The app starts the document-card scanner thread at startup (core/doc_photos.py). In tests it would read the
+    same temporary folders as the test with real OCR and race it; tests call doc_photos.run_once() themselves."""
+    from app.core import doc_photos
+
+    monkeypatch.setattr(doc_photos.PhotoWorker, "start", lambda self: False)

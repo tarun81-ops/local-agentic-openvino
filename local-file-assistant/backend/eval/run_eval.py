@@ -12,7 +12,7 @@ Each line of the questions file is JSON:
   file:   the file the answer should come from (retrieval + citation are checked against it).
   {"q": "...", "no_answer": true}  -> the files don't contain this; the model should say so.
 
-Uses a throwaway index (never your real one) and needs Ollama running with the models pulled.
+Uses a throwaway index (never your real one) and needs OpenVINO Model Server running with both models exported.
 Writes eval\\results\\<time>.json and prints a summary.
 
 Retrieval only (no chat model, a few minutes): which file each search stage ranks first.
@@ -137,14 +137,14 @@ def _first_file(item: dict) -> str:
 def run_retrieval(args, tmp: Path) -> int:
     from app.config import settings
     from app.core import indexer
-    from app.core.llm.client import ollama_status
+    from app.core.llm.client import server_status
     from app.core.search import fts_search, reranker, vector_search
     from app.core.search.hybrid import hybrid_search
     from app.db import sqlite_fts, vector_store
 
-    status = ollama_status()
+    status = server_status()
     if not status["connected"] or settings.embedding_model not in status["models"]:
-        print(f"Needs Ollama running with {settings.embedding_model} pulled.")
+        print(f"Needs OpenVINO Model Server running and serving {settings.embedding_model}.")
         return 2
     if args.folder:
         folder = Path(args.folder)
@@ -218,17 +218,17 @@ def main() -> int:
     from app.config import settings
     from app.core import indexer, ram
     from app.core.llm.answerer import answer_stream
-    from app.core.llm.client import current_model, ollama_status
+    from app.core.llm.client import current_model, server_status
     from app.core.llm.verifier import verify
     from app.core.search.hybrid import hybrid_search
 
     model = args.model or current_model()
-    status = ollama_status()
+    status = server_status()
     if not status["connected"]:
-        print("Ollama isn't running. Start it and try again.")
+        print("OpenVINO Model Server isn't running. Start it (scripts\\ovms-start.ps1) and try again.")
         return 2
     if model not in status["models"]:
-        print(f"{model} isn't pulled. Run: ollama pull {model}")
+        print(f"OVMS doesn't serve {model}. Export it with scripts\\ovms-export.ps1.")
         return 2
 
     items = [json.loads(line) for line in Path(args.questions).read_text(encoding="utf-8").splitlines() if line.strip()]

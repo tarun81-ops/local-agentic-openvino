@@ -27,7 +27,5 @@ cd "$root/ui"
 npm install
 
 echo
-echo "Done. Make sure Ollama is running with the models pulled:"
-echo "  ollama pull qwen3-vl:2b-instruct"
-echo "  ollama pull granite-embedding:278m"
+echo "Done. Export the models and start OpenVINO Model Server (docs/OPENVINO.md)."
 echo "Then start the app with:  cd ui && npm run dev"

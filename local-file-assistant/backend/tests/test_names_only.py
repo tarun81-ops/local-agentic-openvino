@@ -136,7 +136,7 @@ def test_chat_finds_and_reads_a_pdf_live_with_a_page_to_cite(pc_drive, monkeypat
     from app.api import routes_chat
 
     def model_down(*a, **k):  # the planning/choosing model is optional: rules and names must do the work
-        raise RuntimeError("ollama not running")
+        raise RuntimeError("model server down")
 
     monkeypatch.setattr(file_agent, "llm_json", model_down)
     events, (chunks, kind) = _drain(routes_chat._pc_lookup("acme invoice", "what is the total on my acme invoice?", "chat", []))

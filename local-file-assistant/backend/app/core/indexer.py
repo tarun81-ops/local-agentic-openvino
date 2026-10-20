@@ -70,12 +70,24 @@ def _record_error(path: Path, exc: Exception) -> None:
     # The traceback goes in as text, not as a live exc_info: a log record that keeps the exception
     # alive also keeps its frames alive, and a parser that failed half-way can still hold the
     # file open, which on Windows blocks moving or deleting the file afterwards.
-    trace = "" if isinstance(exc, RuntimeError) else "\n" + "".join(traceback.format_exception(exc)).rstrip()
-    log.error("failed to index %s: %s%s", path, str(exc), trace)
+    from app.core.assistant.file_agent import unreadable_reason
+    from app.core.parsers.pdf_parser import LockedPdf
+
+    # Expected, user-side reasons (a locked PDF, a file on the phone or online-only in OneDrive, a file another
+    # program holds): one plain line, no traceback. 195 tracebacks for CrossDevice files buried the real errors.
+    expected = isinstance(exc, (LockedPdf, PermissionError, FileNotFoundError)) or "encrypted" in str(exc).lower() or (
+        isinstance(exc, OSError) and (exc.errno in (5, 22) or getattr(exc, "winerror", None) in (362, 389, 390, 395, 396)))
+    if expected:
+        reason = unreadable_reason(Path(path), exc)
+        log.warning("skipped %s: %s", path, reason)
+    else:
+        trace = "" if isinstance(exc, RuntimeError) else "\n" + "".join(traceback.format_exception(exc)).rstrip()
+        log.error("failed to index %s: %s%s", path, str(exc), trace)
+        reason = f"{type(exc).__name__}: {exc}"
     RECENT_ERRORS.appendleft(
         {
             "path": str(path),
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": reason,
             "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
     )

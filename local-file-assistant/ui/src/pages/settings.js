@@ -320,9 +320,9 @@ export function render(container, { onStatusChanged }) {
       perfBox.replaceChildren(
         el('div', { class: 'kv kv-plain' }, el('label', { for: 'pf-profile' }, 'Profile'), profile),
         el('div', { class: 'quiet' }, `In force now: ${PROFILE_NAMES[st.active]} · ${power} · free RAM ${gb(st.free_mb)}`),
-        el('div', { class: 'quiet' }, `Model unloads after ${unload > 0 ? `${Math.round(unload / 60)} min` : 'never'} · chat remembers ${st.values.history_turns} turns · image captions ${st.values.caption_images ? 'on' : 'off'} · embedder idle ${st.values.embed_keep_alive}`),
+        el('div', { class: 'quiet' }, `Voice models unload after ${unload > 0 ? `${Math.round(unload / 60)} min` : 'never'} · chat remembers ${st.values.history_turns} turns · image captions ${st.values.caption_images ? 'on' : 'off'}`),
         st.note ? notice(st.note) : '',
-        number('pf-unload', 'Unload the model after (minutes, 0 = never)', 'perf_unload_minutes', cfg.perf_unload_minutes, { min: 0, max: 240 }),
+        number('pf-unload', 'Unload voice models after (minutes, 0 = never)', 'perf_unload_minutes', cfg.perf_unload_minutes, { min: 0, max: 240 }),
         number('pf-ram', 'Stop indexing when free RAM is below (MB)', 'perf_min_free_ram_mb', cfg.perf_min_free_ram_mb, { min: 0, max: 8192 }),
         el('div', { class: 'mem-group' }, 'What each profile changes'),
         ...Object.entries(st.words).map(([k, text]) => el('div', { class: 'quiet' }, `${PROFILE_NAMES[k]} — ${text}`)),
@@ -366,7 +366,7 @@ export function render(container, { onStatusChanged }) {
     try {
       const s = await api.settings();
       const picker = el('select', { class: 'field field-mono', id: 'model-select', 'aria-label': 'Model' });
-      const models = s.ollama.models.includes(s.model) ? s.ollama.models : [s.model, ...s.ollama.models];
+      const models = s.server.models.includes(s.model) ? s.server.models : [s.model, ...s.server.models];
       picker.append(...models.map((m) => el('option', { value: m, selected: m === s.model }, m)));
       const save = el('button', { type: 'button', class: 'link-btn', disabled: true }, 'Change');
       picker.addEventListener('change', () => (save.disabled = picker.value === s.model));
@@ -386,9 +386,9 @@ export function render(container, { onStatusChanged }) {
         kv('Embedding model', el('span', { class: 'mono' }, s.embedding_model)),
         kv(
           'Connection',
-          s.ollama.connected
+          s.server.connected
             ? el('span', { class: 'conn' }, el('span', { class: 'status-dot' }), 'Connected')
-            : el('span', { class: 'conn conn-off' }, 'Not running — start Ollama, then reopen this page'),
+            : el('span', { class: 'conn conn-off' }, 'Not running — start OpenVINO Model Server (scripts\\ovms-start.ps1), then reopen this page'),
         ),
         kv('File types', el('span', { class: 'mono' }, s.file_types.join('  '))),
         kv('Data folder', el('span', { class: 'mono' }, s.data_dir)),

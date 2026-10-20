@@ -73,7 +73,7 @@ def test_broken_file_is_reported_with_a_reason(corpus, db_paths):
 
 def test_embedder_down_keeps_keyword_index_and_retries_later(corpus, db_paths, monkeypatch):
     def down(*_a, **_k):
-        raise ConnectionError("ollama not running")
+        raise ConnectionError("model server down")
 
     monkeypatch.setattr(indexer, "embed", down)
     db, vdb = db_paths

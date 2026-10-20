@@ -26,7 +26,7 @@ Set-Location "$root\ui"
 npm install
 
 Write-Host ""
-Write-Host "Done. Make sure Ollama is running with the models pulled:"
-Write-Host "  ollama pull qwen3-vl:2b-instruct"
-Write-Host "  ollama pull granite-embedding:278m"
+Write-Host "Done. Export the models once and start OpenVINO Model Server:"
+Write-Host "  scripts\ovms-export.ps1"
+Write-Host "  scripts\ovms-start.ps1"
 Write-Host "Then start the app with:  cd ui; npm run dev"

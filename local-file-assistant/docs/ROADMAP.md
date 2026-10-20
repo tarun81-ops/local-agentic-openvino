@@ -29,7 +29,7 @@ Next
    that it answers the question: an eval run with a stand-in model showed on-topic
    citations for off-topic answers, so answer relevance needs its own check.
 3. Multi-turn Ask (send earlier turns as context).
-4. Benchmark OpenVINO Model Server on the NPU against Ollama on CPU (docs/OPENVINO.md).
+4. Benchmark OpenVINO Model Server on NPU vs iGPU vs CPU (docs/OPENVINO.md).
 5. Try the personalization features on the laptop (docs/TESTING-ON-WINDOWS.md, section 2) and measure
    whether the added prompt text changes answer quality or latency on qwen3-vl:2b.
 6. Not done: saved study decks (cards live only in the dialog and export to CSV), per-folder subfolder

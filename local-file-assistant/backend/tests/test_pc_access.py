@@ -178,7 +178,7 @@ def test_agent_finds_and_reads_the_right_passage(agent):
 
 
 def test_agent_survives_a_dead_or_confused_model(agent):
-    agent.answers[PLAN_MARK] = RuntimeError("ollama down")
+    agent.answers[PLAN_MARK] = RuntimeError("model server down")
     agent.answers[PICK_MARK] = {"pick": [99, "x", True]}  # nonsense numbers are ignored -> top matches are read
     _steps, result = run(file_agent.gather("electricity bill"))
     assert result["chunks"]

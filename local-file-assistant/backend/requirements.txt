@@ -11,7 +11,7 @@ python-docx>=1.2,<2
 python-pptx>=1.0.2,<2
 openpyxl>=3.1.5,<4
 
-# search (embeddings come from granite-embedding:278m via Ollama, so no torch)
+# search (embeddings come from OpenVINO Model Server, so no torch)
 lancedb>=0.39,<1
 # re-ranking (core/search/reranker.py): a small cross-encoder on ONNX Runtime, still no torch
 onnxruntime>=1.30,<2

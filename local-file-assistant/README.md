@@ -11,8 +11,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/ROADMAP.md](docs/ROADMAP
 
 ```powershell
 scripts\setup.ps1                  # venv + Python packages + npm packages
-ollama pull qwen3-vl:2b-instruct
-ollama pull granite-embedding:278m
+scripts\ovms-export.ps1            # once: models for OpenVINO Model Server (docs/OPENVINO.md)
+scripts\ovms-start.ps1             # keep this window open
 cd ui; npm run dev                 # opens the app; it starts the backend itself
 ```
 
@@ -32,8 +32,8 @@ as Downloads. All of it is stored on this PC and sent nowhere.
 
 ```powershell
 cd backend
-.venv\Scripts\python.exe -m pytest              # no Ollama needed
-.venv\Scripts\python.exe -m pytest tests\test_live_ollama.py -s   # real model, if running
+.venv\Scripts\python.exe -m pytest              # no model server needed
+.venv\Scripts\python.exe -m pytest tests\test_live_ovms.py -s     # real model, if OVMS is running
 .venv\Scripts\python.exe eval\run_eval.py       # answer quality, speed and RAM on the real model
 ```
 

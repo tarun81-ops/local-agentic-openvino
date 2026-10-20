@@ -9,6 +9,7 @@ import numpy as np
 from app.config import settings
 from app.core.search import vector_search
 from app.db import assistant_db
+from app.core.words import words
 
 log = logging.getLogger(__name__)
 
@@ -19,9 +20,9 @@ _STOP = {"the", "and", "for", "what", "which", "who", "how", "you", "your", "are
 _COLS = "id, text, kind, pinned, created_at, last_used_at, use_count, status"
 
 
-def _embed(texts: list[str]) -> list[bytes | None]:
+def _embed(texts: list[str], query: bool = False) -> list[bytes | None]:
     try:
-        return [np.asarray(v, dtype=np.float32).tobytes() for v in vector_search.embed(texts, timeout=EMBED_TIMEOUT)]
+        return [np.asarray(v, dtype=np.float32).tobytes() for v in (vector_search.embed_query if query else vector_search.embed)(texts, timeout=EMBED_TIMEOUT)]
     except Exception as exc:  # no embedder: keyword recall still works, vectors are filled in later
         log.warning("memory embedding skipped: %s", exc)
         return [None] * len(texts)
@@ -151,12 +152,12 @@ def recall(query: str, k: int | None = None, touch: bool = True) -> list[dict]:
     try:
         _refresh_embeddings(conn)
         scores: dict[int, float] = {}
-        terms = [t for t in re.findall(r"\w+", query.lower()) if len(t) > 2 and t not in _STOP]
+        terms = [t for t in words(query.lower()) if len(t) > 2 and t not in _STOP]  # Hindi words stay whole
         if terms:
             match = " OR ".join(f'"{t}"' for t in terms)
             for rank, r in enumerate(conn.execute("SELECT rowid FROM memories_fts WHERE memories_fts MATCH ? AND rowid IN (SELECT id FROM memories WHERE status = 'active') ORDER BY rank LIMIT 20", (match,))):
                 scores[r[0]] = scores.get(r[0], 0) + 1 / (60 + rank + 1)
-        [qblob] = _embed([query])
+        [qblob] = _embed([query], query=True)
         if qblob:
             q = _norm(qblob)
             sims = []

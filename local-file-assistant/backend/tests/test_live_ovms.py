@@ -1,20 +1,20 @@
-"""End-to-end check against a real Ollama: index the test corpus, ask a question, verify the
-citations. Skipped unless Ollama is running with the configured models pulled.
-Run on its own with:  .venv\\Scripts\\python.exe -m pytest tests\\test_live_ollama.py -s"""
+"""End-to-end check against a real OpenVINO Model Server: index the test corpus, ask a question,
+verify the citations. Skipped unless OVMS is running and serves the configured models.
+Run on its own with:  .venv\\Scripts\\python.exe -m pytest tests\\test_live_ovms.py -s"""
 import time
 
 import pytest
 
 import app.core.indexer as indexer_mod
 import app.core.search.vector_search as vs_mod
-from app.core.llm.client import current_model, ollama_status
+from app.core.llm.client import current_model, server_status
 from tests.conftest import REAL_EMBED
 
 
 def test_answer_is_cited_and_verified(corpus, db_paths, monkeypatch):
-    status = ollama_status()
+    status = server_status()
     if not status["connected"] or current_model() not in status["models"]:
-        pytest.skip("Ollama not running, or the configured model isn't pulled")
+        pytest.skip("OVMS not running, or it doesn't serve the configured model")
     monkeypatch.setattr(indexer_mod, "embed", REAL_EMBED)
     monkeypatch.setattr(vs_mod, "embed", REAL_EMBED)
 
@@ -43,9 +43,9 @@ def test_chat_endpoint_streams_a_verified_answer(corpus, db_paths, monkeypatch):
 
     from fastapi.testclient import TestClient
 
-    status = ollama_status()
+    status = server_status()
     if not status["connected"] or current_model() not in status["models"]:
-        pytest.skip("Ollama not running, or the configured model isn't pulled")
+        pytest.skip("OVMS not running, or it doesn't serve the configured model")
     monkeypatch.setattr(indexer_mod, "embed", REAL_EMBED)
     monkeypatch.setattr(vs_mod, "embed", REAL_EMBED)
     from app.config import settings

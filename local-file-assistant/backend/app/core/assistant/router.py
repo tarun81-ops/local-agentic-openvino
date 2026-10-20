@@ -19,6 +19,10 @@ def route(mode: str, message: str, results: list[dict] | None = None) -> str:
         return "chat"
     if _FILE_WORDS.search(message) or any(r.get("match") == "both" for r in results):
         return "files"
+    from app.core import owner
+
+    if owner.about_me(message):  # "what is my school name": a fact from the user's own documents, never a guess
+        return "files"
     return "chat"
 
 

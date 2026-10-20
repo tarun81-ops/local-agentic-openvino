@@ -10,7 +10,7 @@ STOPWORDS = frozenset(
     tell show find give please""".split()
 )
 
-_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
+from app.core.words import WORD as _TOKEN_RE  # keeps Hindi words whole, like the index tokenizer
 
 
 def terms(query: str) -> list[str]:

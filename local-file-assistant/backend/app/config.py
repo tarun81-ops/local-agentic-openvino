@@ -29,24 +29,40 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8756
 
-    ollama_url: str = "http://localhost:11434"
-    ollama_base_url: str = "http://localhost:11434/v1"
-    ollama_model: str = "qwen3-vl:2b-instruct"
-    embedding_model: str = "granite-embedding:278m"
+    # OpenVINO Model Server (OVMS): its OpenAI-compatible API, on this PC only. The model names are
+    # the --model_name aliases given at export time (scripts\ovms-export.ps1), so swapping the
+    # actual model never needs a config change. See docs\OPENVINO.md.
+    ov_base_url: str = "http://127.0.0.1:8000/v3"
+    ov_chat_model: str = "chat"
+    embedding_model: str = "embed"
     embed_batch_size: int = 32
-
-    # "ollama", or "openai" for any OpenAI-compatible server (e.g. OpenVINO Model Server on
-    # the NPU/iGPU): chat and embeddings then both go to ollama_base_url's /v1 API.
-    llm_provider: str = "ollama"
+    # Qwen3-style models "think" out loud before answering unless told not to. True sends
+    # chat_template_kwargs={"enable_thinking": false} with every chat request.
+    ov_disable_thinking: bool = True
+    # Start OpenVINO Model Server automatically when it isn't running (Windows; core/llm/ovms_runner.py).
+    # OVMS_DIR is where the OVMS release zip was unpacked; empty = %LOCALAPPDATA%\ovms.
+    ovms_autostart: bool = True
+    ovms_dir: str = ""
+    # Sampling for every chat request (a request may override). The model's own generation_config holds
+    # Qwen3's thinking-mode values; Qwen recommends these for non-thinking mode, never greedy decoding, and a
+    # presence penalty against the repetition loops small int4 models fall into.
+    ov_temperature: float = 0.7
+    ov_top_p: float = 0.8
+    ov_top_k: int = 20
+    ov_presence_penalty: float = 1.0
+    # Qwen3-Embedding wants an instruction in front of search queries (not documents); without it retrieval
+    # is 1-5% worse. "" sends bare queries (for an embedding model that doesn't use one).
+    embed_query_instruct: str = "Given a question about a person's own files, retrieve passages that answer it"
+    # Longest text sent to the embedder per input: OVMS rejects over-long inputs instead of truncating them.
+    embed_max_chars: int = 4000
     # Longest wait for the chat model: between streamed tokens, or for a whole non-streamed
     # reply (the organizer's plan). Generous because a CPU can take minutes; the SDK default
     # is 10 minutes with two silent retries.
     llm_timeout_s: int = 300
 
-    # RAM: unload the chat model after this many idle seconds (0 = never), keep the embedder
-    # only briefly after indexing, and skip embeddings while free RAM is below this.
+    # RAM: unload voice models after this many idle seconds (0 = never; OVMS keeps the chat model
+    # loaded), and skip embeddings while free RAM is below this.
     llm_idle_unload_s: int = 600
-    embed_keep_alive: str = "2m"
     min_free_ram_mb: int = 1200
 
     data_dir: Path = _DEFAULT_DATA_DIR
@@ -90,6 +106,13 @@ class Settings(BaseSettings):
     # STORE_FILE_TEXT=true in backend\.env to bring back the index (faster answers, search inside files,
     # but it keeps a copy of the text that grows with your files).
     store_file_text: bool = False
+    # Names-only mode: OCR each photo once and keep a ~400-character card, so a marksheet saved as
+    # IMG-20250626-WA0122.jpg can be found (core/doc_photos.py). Needs whole-PC access and RapidOCR.
+    doc_photo_scan: bool = True
+    # The answer prompt (rules + passages + recent chat) is kept under this many characters, so it fits the
+    # model's context window the first time (OVMS refuses a longer prompt with HTTP 400 and the answerer then
+    # retries with half the passages). Hindi text counts 3x (more tokens per letter).
+    max_prompt_chars: int = 10000
 
     # Describe images with the vision model while indexing (slow on CPU; OCR works without it).
     caption_images: bool = False

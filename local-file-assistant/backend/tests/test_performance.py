@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.core import personalize, ram
 from app.core.assistant import conversation
-from app.core.llm import idle
 from app.core.parsers import image_parser
 from app.main import app
 
@@ -32,17 +31,16 @@ def _battery(monkeypatch, plugged):
 
 def test_balanced_is_the_default_and_changes_nothing():
     assert personalize.active_profile() == "balanced"
-    for name in ("llm_idle_unload_s", "min_free_ram_mb", "history_turns", "caption_images", "embed_keep_alive"):
+    for name in ("llm_idle_unload_s", "min_free_ram_mb", "history_turns", "caption_images"):
         assert personalize.effective(name) == getattr(settings, name)
 
 
 def test_battery_and_plugged_overrides():
     personalize.update({"perf_profile": "battery"})
-    assert [personalize.effective(n) for n in ("llm_idle_unload_s", "caption_images", "embed_keep_alive", "history_turns")] == [120, False, "30s", 3]
+    assert [personalize.effective(n) for n in ("llm_idle_unload_s", "caption_images", "history_turns")] == [120, False, 3]
     assert personalize.effective("min_free_ram_mb") == settings.min_free_ram_mb  # not part of a profile
     personalize.update({"perf_profile": "plugged"})
     assert [personalize.effective(n) for n in ("llm_idle_unload_s", "caption_images", "history_turns")] == [1800, True, 6]
-    assert personalize.effective("embed_keep_alive") == settings.embed_keep_alive
 
 
 @pytest.mark.parametrize("plugged,expected", [(False, "battery"), (True, "plugged"), (None, "balanced")])
@@ -77,14 +75,23 @@ def test_custom_fields_win_over_the_profile_and_validate():
 
 
 def test_idle_unload_uses_the_profile_with_a_fake_clock():
-    idle.touch()
-    start = idle._last_used
+    """Voice models are the ones unloaded when idle now (OVMS keeps the chat model loaded)."""
+    from app.core.assistant.voice import Lazy
+
+    model = Lazy()
+
+    def loaded_at(t: float) -> None:
+        model._obj, model._last = object(), t
+
     personalize.update({"perf_profile": "battery"})  # 120 s
-    assert not idle._due(start + 119) and idle._due(start + 121)
+    loaded_at(0)
+    assert not model.drop_if_idle(119) and model.drop_if_idle(121)
     personalize.update({"perf_profile": "plugged"})  # 1800 s
-    assert not idle._due(start + 1000) and idle._due(start + 1801)
+    loaded_at(0)
+    assert not model.drop_if_idle(1000) and model.drop_if_idle(1801)
     personalize.update({"perf_unload_minutes": 0})  # never
-    assert not idle._due(start + 10**6)
+    loaded_at(0)
+    assert not model.drop_if_idle(10**6)
 
 
 def test_ram_guard_uses_the_custom_threshold(monkeypatch):

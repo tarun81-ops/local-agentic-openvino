@@ -8,8 +8,8 @@ off after big changes.
 
 ```powershell
 cd backend
-.venv\Scripts\python.exe -m pytest                                   # 69 tests, no Ollama needed
-.venv\Scripts\python.exe -m pytest tests\test_live_ollama.py -s      # real model, Ollama running
+.venv\Scripts\python.exe -m pytest                                   # no model server needed
+.venv\Scripts\python.exe -m pytest tests\test_live_ovms.py -s        # real model, OVMS running
 .venv\Scripts\python.exe eval\run_eval.py                            # answer quality + speed + RAM
 ```
 
@@ -65,10 +65,10 @@ Keep the `eval\results\*.json` file: it's the baseline to compare the next model
   - [ ] REMIND ME on a search row: confirm a reminder for 2 minutes from now. The Tasks page shows the file name with OPEN; the toast says "click to open <file>" and clicking it opens the file.
   - [ ] Settings > NEW-FILE NUDGE: add Downloads, save a file there, and (after the first check) one toast per day mentions it and clicking opens Organize. Nothing moves. Quiet hours and the daily limit hold it back.
   - [ ] Settings > APPEARANCE: DARK, each accent, and TEXT SIZE change the whole app at once and survive a restart; FOLLOW WINDOWS follows the Windows theme. Check text is readable on buttons, badges and the Index charts in dark. COMPACT OVERLAY and OVERLAY POSITION apply the next time the overlay opens.
-  - [ ] Settings > PERFORMANCE: BATTERY SAVER shows the model unloading after 2 minutes (`ollama ps`); AUTO changes when you unplug the charger (refresh the page); a custom "unload after" of 0 keeps the model loaded.
+  - [ ] Settings > PERFORMANCE: BATTERY SAVER shows voice models unloading after 2 minutes; AUTO changes when you unplug the charger (refresh the page); a custom "unload after" of 0 keeps voice models loaded.
 - [ ] Close the window: app stays in the tray. Tray > Quit: Task Manager shows no `python.exe` left behind.
 - [ ] Kill the backend `python.exe` in Task Manager: within a few seconds the app works again (auto-restart).
-- [ ] Settings shows FREE MEMORY; after 10 idle minutes `ollama ps` no longer lists the chat model.
+- [ ] Settings shows FREE MEMORY and Connection: Connected while OVMS runs; stop OVMS and it shows Not running.
 - [ ] Organize > Recycle Bin and Delete forever (real Windows bin; the unit tests only simulate it):
   - [ ] Delete a test file in File Explorer, open the Recycle Bin tab: it is listed with its name, original folder, size and "deleted today". Items already in the bin from before show up too.
   - [ ] RESTORE puts it back where it was (a taken name gets "(restored)"); Explorer's Recycle Bin no longer lists it.

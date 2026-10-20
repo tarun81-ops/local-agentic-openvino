@@ -159,3 +159,57 @@ def answer_for(file_name: str, loc_no: int, text: str) -> str | None:
 
 def wanted(message: str) -> bool:
     return bool(ASKS_MARKS.search(message))
+
+
+# ---------- a whole marksheet, summarised in code ----------
+# "summarise my class 10 result" got "shows his roll number, school and grades" from the model: true, and useless.
+# The facts are on the sheet in fixed places, so they are read out here and the model is not asked.
+
+ASKS_SUMMARY = re.compile(r"\b(summar\w*|overview|details?|result|marksheet|mark\s*sheet|report\s*card|sab\s*kuch|everything)\b", re.I)
+# Questions about one field go to the model (or to the percentage maths above), not to the whole summary.
+_ONE_FIELD = re.compile(r"\b(roll|school|dob|birth|name|grade in|marks in|how many|which subject|father|mother|seat|registration|regn)\b", re.I)
+_SHORT_CLASS = re.compile(r"^\s*(?:my\s+|meri\s+|mera\s+)?(?:class|std)\s*(?:10|12|x|xii)\s*(?:th)?\s*(?:result|marksheet)?\s*\??\s*$", re.I)
+
+_ROLL = re.compile(r"roll\s*(?:no\.?|number|code)?\s*[:\-.]?\s*([A-Z]?\d{5,12})", re.I)
+_SCHOOL = re.compile(r"(?:^|\n)[ \t]*(?:name\s+of\s+)?school(?:'?s)?(?:[ \t]*name)?[ \t]*[:\-]?[ \t]*([A-Z][A-Za-z0-9 .,&'()\-]{3,70}?)[ \t]*(?=\n|$)", re.I)
+_DOB = re.compile(r"(?:date\s+of\s+birth|d\.?o\.?b\.?)\s*[:\-]?\s*(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{4})", re.I)
+_RESULT = re.compile(r"\bresult\s*[:\-]?\s*(pass(?:ed)?|fail(?:ed)?|compartment|comptt\.?|essential repeat|qualified|not qualified)\b", re.I)
+_EXAM = re.compile(r"((?:senior\s+)?(?:secondary\s+|higher\s+secondary\s+)?school\s+(?:certificate\s+)?examination|high\s+school\s+examination|"
+                   r"intermediate\s+examination)[^\n\d]{0,25}(\d{4})?", re.I)
+
+
+def asks_summary(message: str) -> bool:
+    return bool(ASKS_SUMMARY.search(message) and not _ONE_FIELD.search(message)) or bool(_SHORT_CLASS.match(message))
+
+
+def summary_for(file_name: str, loc_no: int, text: str) -> str | None:
+    """The whole sheet in a few lines: exam, name, roll no, school, marks, the percentage (computed here) and the
+    result. None if the text is not a marksheet whose marks can be read."""
+    from app.core import owner
+
+    res = compute(parse_marksheet(text))
+    if res is None:
+        return None
+    flat = re.sub(r"[ \t]+", " ", text)
+    lines = []
+    exam = _EXAM.search(flat)
+    if exam:
+        lines.append(f"Exam: {' '.join(exam.group(1).split()).title()}" + (f" {exam.group(2)}" if exam.group(2) else ""))
+    people = owner.named_people(flat)
+    if people:
+        lines.append(f"Name: {people[0]}")
+    for label, rx in (("Roll no", _ROLL), ("Date of birth", _DOB), ("School", _SCHOOL)):
+        m = rx.search(flat)
+        if m:
+            lines.append(f"{label}: {m.group(1).strip(' ,.-')}")
+    lines.append(f"Marks: {res.lines}")
+    lines.append(f"Percentage: {_fmt(res.percent)}% (calculated by the app, not by the AI: {res.working})")
+    if res.best_five:
+        lines.append(res.best_five)
+    result = _RESULT.search(flat)
+    if result:
+        lines.append(f"Result: {result.group(1).upper()}")
+    out = f"From {file_name} [{file_name}, p. {loc_no}]:\n" + "\n".join(f"- {line}" for line in lines)
+    if res.caution:
+        out += "\n\n" + res.caution
+    return out

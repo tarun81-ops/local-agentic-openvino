@@ -187,7 +187,7 @@ def test_partial_files_are_retried_for_their_vectors(pc, monkeypatch):
     from tests.conftest import fake_embed
 
     def down(texts, timeout=None):
-        raise ConnectionError("ollama down")
+        raise ConnectionError("model server down")
 
     monkeypatch.setattr(indexer, "embed", down)
     drain()

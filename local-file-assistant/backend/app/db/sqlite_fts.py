@@ -8,7 +8,13 @@ from pathlib import Path
 # Porter stemming (tokenize = 'porter unicode61') was measured with eval/run_eval.py --retrieval
 # and cost a question without winning one; retry it against real documents before adding it.
 # 4: chunk rowids are file id * CHUNKS_PER_FILE + chunk number.
-SCHEMA_VERSION = 4
+# 5: Hindi words stay whole (TOKENIZE): the default tokenizer split them at every vowel sign.
+SCHEMA_VERSION = 5
+
+# unicode61 treats only letters, numbers and private-use characters as part of a word. Devanagari vowel signs
+# and the virama (ा ि ी ् ं) are marks (Mn/Mc), so "देवता" was stored as fragments like "द" and "वत" that match
+# almost any Hindi text. Counting marks as word characters keeps Hindi words whole; English is unchanged.
+TOKENIZE = "unicode61 remove_diacritics 2 categories 'L* N* Co Mn Mc'"
 
 # A file's chunks are one rowid range. FTS5 reaches a rowid through an index, while
 # "WHERE path = ?" reads the whole table (40 ms per file at 60k chunks, measured).
@@ -35,7 +41,8 @@ CREATE TABLE IF NOT EXISTS meta (
     value TEXT
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks USING fts5(
-    path, loc_kind UNINDEXED, loc_no UNINDEXED, chunk_no UNINDEXED, text
+    path, loc_kind UNINDEXED, loc_no UNINDEXED, chunk_no UNINDEXED, text,
+    tokenize="unicode61 remove_diacritics 2 categories 'L* N* Co Mn Mc'"
 );
 """
 

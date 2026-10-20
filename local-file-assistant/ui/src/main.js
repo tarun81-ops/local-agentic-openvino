@@ -89,7 +89,7 @@ async function importOldChats() {
 async function refreshStatus() {
   try {
     const s = await api.settings();
-    state.status = { connected: s.ollama.connected, model: s.model };
+    state.status = { connected: s.server.connected, model: s.model };
   } catch {
     state.status = { connected: false, model: '' };
   }

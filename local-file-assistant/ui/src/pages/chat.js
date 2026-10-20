@@ -224,7 +224,7 @@ export function render(container, { chatId, onChatsChanged, navigate }) {
 
   api.roots().then((d) => { roots = d.roots; }).catch(() => {});
   api.settings().then((s) => {
-    models = s.ollama?.models || [];
+    models = s.server?.models || [];
     pick.model = s.model || '';
     drawPicks();
   }).catch(() => {});
