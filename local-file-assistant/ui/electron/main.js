@@ -1,4 +1,8 @@
-const { app, BrowserWindow, Menu, Notification, Tray, clipboard, dialog, globalShortcut, ipcMain, nativeImage, screen, session } = require('electron');
+const { app, BrowserWindow, Menu, Notification, Tray, clipboard, dialog, globalShortcut, ipcMain, nativeImage, screen, session, shell } = require('electron');
+
+// The only pages the app opens in the browser: official download pages offered by setup (pages/setup.js).
+// Anything else is refused, so a link in a file or an answer can never be opened through this.
+const OPEN_LINKS = new Set(['https://github.com/openvinotoolkit/model_server/releases']);
 const { spawn, spawnSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -488,6 +492,7 @@ ipcMain.handle('overlay:insert', async (_e, text) => {
     return false;
   }
 });
+ipcMain.handle('app:open-link', (_e, url) => (OPEN_LINKS.has(url) ? shell.openExternal(url).then(() => true) : false));
 ipcMain.handle('dialog:pick-folder', async (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   const result = await dialog.showOpenDialog(win, { title: 'Choose a folder', properties: ['openDirectory'] });

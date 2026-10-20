@@ -1,6 +1,7 @@
 """'What is my class 12 roll no' must come from the user's own marksheet: not a friend's 12th.pdf, and also when
 the user's copy is a phone photo called IMG-20250626-WA0122.jpg (the user's real case, Oct 2026)."""
 import json
+import os
 import re
 
 import pytest
@@ -294,4 +295,4 @@ def test_once_known_other_peoples_marksheets_are_not_even_opened(crowded, monkey
     monkeypatch.setattr(file_agent, "read_chunks", lambda path, *a, **k: (opened.append(path), real(path, *a, **k))[1])
     _ev, found = _drain(file_agent.gather("show my marksheet", owner_name="Tarun Verma"))
     assert {c["name"] for c in found["chunks"]} == {"12 th.jpeg"}
-    assert [p.split("/")[-1] for p in opened] == ["12 th.jpeg"]
+    assert [os.path.basename(p) for p in opened] == ["12 th.jpeg"]

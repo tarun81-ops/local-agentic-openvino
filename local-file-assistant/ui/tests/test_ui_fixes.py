@@ -67,6 +67,7 @@ DEFAULTS = {
     "/files/index/status": {"state": "idle", "folder": None, "queue": [], "error": None, "seen": 0, "indexed": 0,
                             "skipped": 0, "failed": 0, "removed": 0, "keyword_only": 0, "errors": []},
     "/organize/history": {"batches": []},
+    "/setup/status": {"done": True},  # set up already, so the other tests land on Chat; the setup tests override it
     "/memory": {"memories": [], "counts": {"active": 0, "pending": 0}},
     "/pc": {"enabled": False, "drives": [], "extra_excludes": [], "available_drives": ["C:\\"], "files": 0,
             "last_scan": None, "running": False, "progress": {}, "scan_error": "", "read_content": True,
@@ -87,6 +88,8 @@ class FakeBackend:
         if route.request.method == "OPTIONS":
             return route.fulfill(status=204, headers=self._cors())
         body = self.overrides.get(path, DEFAULTS.get(path, {}))
+        if isinstance(body, str):  # a server-sent event stream, already formatted
+            return route.fulfill(status=200, headers={**self._cors(), "Content-Type": "text/event-stream"}, body=body)
         route.fulfill(status=200, headers={**self._cors(), "Content-Type": "application/json"}, body=json.dumps(body))
 
     @staticmethod
@@ -230,4 +233,65 @@ def test_overlay_quick_search_uses_find(page, site):
     page.fill("input", "my offer letter")
     page.wait_for_selector("text=offer.pdf")
     assert fake.count("/find") >= 1 and fake.count("/search") == 0
+    assert page.errors == []
+
+
+# ---------- first-run setup (pages/setup.js) ----------
+
+SETUP_NEW = {
+    "done": False,
+    "engine": {"name": "Model engine", "state": "missing", "ok": False, "detail": "It isn't installed.",
+               "help": {"label": "Download it", "url": "https://example.invalid/download"}},
+    "model": {"recommended": {"label": "Small model", "why": "for a PC with 16 GB of RAM"}, "installed": [],
+              "needed": [{"name": "chat", "label": "Small model", "repo": "x/y", "size_mb": 1200, "command": "pull x/y"}],
+              "source": "example.invalid", "pull": {"status": "idle"}},
+    "folders": {"pc_access": False, "drives": []}, "memory": {"free_mb": 4000, "total_mb": 16000, "low": False},
+    "missing": ["engine", "model"],
+}
+PULL_STREAM = "".join(f"event: {k}\ndata: {json.dumps(d)}\n\n" for k, d in [
+    ("progress", {"status": "running", "percent": 40, "mb": 480, "total_mb": 1200, "model": "Small model", "step": 1, "steps": 1}),
+    ("done", {"status": "done", "percent": 100, "detail": "Downloaded. Starting the model server."}),
+])
+
+
+def test_first_launch_opens_setup_and_walks_the_steps(page, site):
+    fake = FakeBackend(page, overrides={"/setup/status": SETUP_NEW, "/setup/model/pull": PULL_STREAM})
+    page.add_init_script(stub())
+    page.goto(f"{site}/index.html")
+    page.wait_for_selector("text=Your files, answered on this PC")
+    page.click("text=Next")
+    page.wait_for_selector("text=It isn't installed.")
+    assert page.locator("text=Download it").count() == 1  # the help link from the backend, not hard-coded
+    page.click("text=Next")
+    page.wait_for_selector("text=pull x/y")  # the exact command is shown before anything downloads
+    assert fake.count("/setup/model/pull") == 0
+    page.click("text=Download (1.2 GB)")
+    page.wait_for_selector("text=Downloaded. Starting the model server.")
+    assert fake.count("/setup/model/pull") == 1
+    page.click("text=Next")
+    page.wait_for_selector("text=Find and Chat can’t see your files yet.")  # the same PC access switch as Settings
+    assert page.errors == []
+
+
+def test_an_example_question_finishes_setup_and_asks_it_in_chat(page, site):
+    fake = FakeBackend(page, overrides={"/setup/status": {**SETUP_NEW, "missing": []}})
+    sent = []
+    page.on("request", lambda r: sent.append(r.post_data) if r.url.endswith("/chat") and r.method == "POST" else None)
+    page.add_init_script(stub())
+    page.goto(f"{site}/index.html")
+    for _ in range(4):
+        page.click("text=Next")
+    page.click("text=Find my class 12 marksheet")
+    page.wait_for_timeout(500)
+    assert fake.count("/setup/done") == 1
+    assert sent and json.loads(sent[0])["message"] == "Find my class 12 marksheet"
+    assert page.errors == []
+
+
+def test_setup_done_goes_straight_to_chat(page, site):
+    FakeBackend(page)
+    page.add_init_script(stub())
+    page.goto(f"{site}/index.html")
+    page.wait_for_selector("#ask-input")
+    assert page.locator("text=Your files, answered on this PC").count() == 0
     assert page.errors == []

@@ -102,7 +102,7 @@ const popItem = (label, { checked, sub, onPick, close }) =>
  * @param {HTMLElement} container
  * @param {{chatId?:number, onChatsChanged:()=>void, navigate?:(page:string, o?:object)=>void}} opts
  */
-export function render(container, { chatId, onChatsChanged, navigate }) {
+export function render(container, { chatId, onChatsChanged, navigate, prefill }) {
   let convId = chatId ?? null; // set by the first reply of a new chat
   let busy = null; // AbortController while an answer streams
   let turns = 0;
@@ -441,6 +441,7 @@ export function render(container, { chatId, onChatsChanged, navigate }) {
   }
   grow();
   input.focus();
+  if (prefill?.ask) submit(prefill.ask); // an example question clicked in setup
   return () => {
     busy?.abort();
     stopSpeaking();

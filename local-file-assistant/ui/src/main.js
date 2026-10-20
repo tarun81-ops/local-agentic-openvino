@@ -16,10 +16,11 @@ import { render as renderFind } from './pages/find.js';
 import { render as renderOrganize } from './pages/organize.js';
 import { render as renderSearch } from './pages/search.js';
 import { render as renderSettings } from './pages/settings-shell.js';
+import { render as renderSetup } from './pages/setup.js';
 
 applyCached();
 
-const PAGES = { chat: renderChat, find: renderFind, search: renderSearch, organize: renderOrganize, settings: renderSettings };
+const PAGES = { chat: renderChat, find: renderFind, search: renderSearch, organize: renderOrganize, settings: renderSettings, setup: renderSetup };
 // Index and Memory now live inside Settings as tabs; old links ("Go to Index", the tray) still land there.
 const MOVED = { index: 'files', memory: 'memory' };
 
@@ -149,6 +150,9 @@ async function boot() {
   loadAppearance();
   await importOldChats();
   state.ready = true;
+  try {
+    if (!(await api.setupStatus()).done) state.page = 'setup'; // first launch: the setup wizard
+  } catch { /* setup stays reachable from Settings */ }
   show(state.page, { prefill: state.prefill });
   refreshRecent();
   refreshCollections();

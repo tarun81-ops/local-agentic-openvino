@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('lfa', {
   config: () => ipcRenderer.invoke('app:config'),
   shortcut: () => ipcRenderer.invoke('app:shortcut'),
   pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
+  openLink: (url) => ipcRenderer.invoke('app:open-link', url), // only the download pages listed in main.js
   getLaunchAtStartup: () => ipcRenderer.invoke('app:get-login'),
   setLaunchAtStartup: (enabled) => ipcRenderer.invoke('app:set-login', enabled),
   openMain: (page) => ipcRenderer.send('main:open', page),

@@ -42,14 +42,22 @@ def _up() -> bool:
     return bool(server_status().get("connected"))
 
 
-def command() -> list[str]:
-    """PowerShell runs OVMS's own setupvars.ps1 first (DLL and Python paths), then ovms.exe; same flags as ovms-start.ps1."""
+def ps_quote(p) -> str:
+    """A PowerShell single-quoted string."""
+    return "'" + str(p).replace("'", "''") + "'"
+
+
+def ovms_command(args: str) -> list[str]:
+    """PowerShell runs OVMS's own setupvars.ps1 first (DLL and Python paths), then ovms.exe with args."""
     d = ovms_dir()
-    cache = settings.data_dir / "ovms" / "cache"
-    q = lambda p: "'" + str(p).replace("'", "''") + "'"  # PowerShell single-quoted string
-    script = (f"& {q(d / 'setupvars.ps1')} | Out-Null; & {q(d / 'ovms.exe')} --rest_port {_port()} --rest_bind_address 127.0.0.1 "
-              f"--config_path {q(config_path())} --cache_dir {q(cache)}")
+    script = f"& {ps_quote(d / 'setupvars.ps1')} | Out-Null; & {ps_quote(d / 'ovms.exe')} {args}"
     return ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script]
+
+
+def command() -> list[str]:
+    """The server itself, with the same flags as ovms-start.ps1."""
+    cache = settings.data_dir / "ovms" / "cache"
+    return ovms_command(f"--rest_port {_port()} --rest_bind_address 127.0.0.1 --config_path {ps_quote(config_path())} --cache_dir {ps_quote(cache)}")
 
 
 def status() -> dict:

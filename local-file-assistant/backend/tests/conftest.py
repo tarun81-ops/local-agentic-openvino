@@ -76,3 +76,12 @@ def _no_background_card_scan(monkeypatch):
     from app.core import doc_photos
 
     monkeypatch.setattr(doc_photos.PhotoWorker, "start", lambda self: False)
+
+
+@pytest.fixture(autouse=True)
+def _no_ovms_autostart(monkeypatch):
+    """App startup starts OVMS in a background thread (core/llm/ovms_runner.py). In tests that thread talks to a real
+    OVMS if one runs on this PC and races the runner tests over its shared state; tests start it themselves."""
+    from app.core.llm import ovms_runner
+
+    monkeypatch.setattr(ovms_runner, "ensure_running_async", lambda: None)

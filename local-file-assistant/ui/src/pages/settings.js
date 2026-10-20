@@ -10,7 +10,7 @@ function sectionHead(n, title) {
   return el('div', { class: 'section-h' }, el('h2', {}, el('span', { class: 'n' }, `${n} —`), ` ${title}`));
 }
 
-export function render(container, { onStatusChanged }) {
+export function render(container, { onStatusChanged, navigate }) {
   const model = el('div', { class: 'box box-pad' }, el('div', { class: 'quiet' }, 'Loading…'));
   const flash = el('div');
   const toggle = el('input', { type: 'checkbox', id: 'launch-at-startup', class: 'toggle', role: 'switch' });
@@ -32,7 +32,8 @@ export function render(container, { onStatusChanged }) {
       { class: 'page-body sections' },
       flash,
       el('section', {}, sectionHead('00', 'About me & answers'), meBox),
-      el('section', {}, sectionHead('01', 'Model & backend'), model),
+      el('section', {}, sectionHead('01', 'Model & backend'), model,
+        el('div', { class: 'row-gap' }, el('button', { type: 'button', class: 'btn btn-outline btn-sm', onclick: () => navigate?.('setup') }, 'Run setup again'))),
       el(
         'div',
         { class: 'two-col' },

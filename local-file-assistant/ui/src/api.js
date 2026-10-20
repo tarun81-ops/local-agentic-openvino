@@ -56,14 +56,24 @@ export async function waitForBackend({ timeoutMs = 120000, onWaiting } = {}) { /
 }
 
 /** POST /chat and dispatch its server-sent events: route, results, token, conversation, done, error. */
-export async function chat({ message, conversationId, mode, root, context, style, language }, handlers, signal) {
+export function chat({ message, conversationId, mode, root, context, style, language }, handlers, signal) {
+  return stream('/chat', { message, conversation_id: conversationId ?? null, mode: mode || 'auto', root: root || null, context: context || null, style: style || null, language: language || null }, handlers, signal);
+}
+
+/** POST /setup/model/pull: progress, then done / failed / cancelled. Aborting only stops listening; api.setupCancel() stops the download. */
+export function setupPull(handlers, signal) {
+  return stream('/setup/model/pull', {}, handlers, signal);
+}
+
+/** POSTs body and calls handlers[event](data) for each server-sent event; handlers.error on a network or HTTP error. */
+async function stream(path, body, handlers, signal) {
   const { token } = await config();
   let response;
   try {
-    response = await fetch((await base()) + '/chat', {
+    response = await fetch((await base()) + path, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, conversation_id: conversationId ?? null, mode: mode || 'auto', root: root || null, context: context || null, style: style || null, language: language || null }),
+      body: JSON.stringify(body),
       signal,
     });
   } catch (err) {
@@ -101,6 +111,10 @@ export async function chat({ message, conversationId, mode, root, context, style
 export const api = {
   search: (q, root) => request('/search', { query: { q, root } }),
   settings: () => request('/settings'),
+  // First-run setup (backend/app/api/routes_setup.py); the download itself is setupPull() above.
+  setupStatus: () => request('/setup/status'),
+  setupDone: () => request('/setup/done', { method: 'POST' }),
+  setupCancel: () => request('/setup/model/pull/cancel', { method: 'POST' }),
   setModel: (model) => request('/settings/model', { method: 'PUT', body: { model } }),
   roots: () => request('/files/roots'),
   files: (root) => request('/files', { query: { root } }),
