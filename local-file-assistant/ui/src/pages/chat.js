@@ -102,7 +102,7 @@ const popItem = (label, { checked, sub, onPick, close }) =>
  * @param {HTMLElement} container
  * @param {{chatId?:number, onChatsChanged:()=>void, navigate?:(page:string, o?:object)=>void}} opts
  */
-export function render(container, { chatId, onChatsChanged, navigate, prefill }) {
+export function render(container, { chatId, onChatsChanged, navigate, prefill, workspaceId }) {
   let convId = chatId ?? null; // set by the first reply of a new chat
   let busy = null; // AbortController while an answer streams
   let turns = 0;
@@ -398,7 +398,7 @@ export function render(container, { chatId, onChatsChanged, navigate, prefill })
     busy = new AbortController();
     const signal = busy.signal;
     setBusy(true);
-    const turn = await ask({ log, message, conversationId: convId, mode: pick.mode, root: pick.mode === 'chat' ? '' : pick.root, style: pick.style, language: pick.lang, signal, onScroll: () => (log.scrollTop = log.scrollHeight) });
+    const turn = await ask({ log, message, conversationId: convId, workspaceId, mode: pick.mode, root: pick.mode === 'chat' ? '' : pick.root, style: pick.style, language: pick.lang, signal, onScroll: () => (log.scrollTop = log.scrollHeight) });
     busy = null;
     setBusy(false);
     turns++;

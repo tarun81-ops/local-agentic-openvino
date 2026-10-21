@@ -16,21 +16,23 @@ def title_from(message: str) -> str:
     return one if len(one) <= 60 else one[:57] + "…"
 
 
-def create(title: str = "", created_at: float | None = None) -> dict:
+def create(title: str = "", created_at: float | None = None, workspace_id: int | None = None) -> dict:
     now = created_at or time.time()
     conn = assistant_db.connect()
     try:
-        cur = conn.execute("INSERT INTO conversations(title, created_at, updated_at) VALUES (?, ?, ?)", (title, now, now))
+        cur = conn.execute("INSERT INTO conversations(title, created_at, updated_at, workspace_id) VALUES (?, ?, ?, ?)", (title, now, now, workspace_id))
         conn.commit()
-        return {"id": cur.lastrowid, "title": title}
+        return {"id": cur.lastrowid, "title": title, "workspace_id": workspace_id}
     finally:
         conn.close()
 
 
-def list_all() -> list[dict]:
+def list_all(workspace_id: int | None = None) -> list[dict]:
+    """The chats of one workspace; None = the "All files" chats (those in no workspace)."""
     conn = assistant_db.connect()
     try:
-        rows = conn.execute("SELECT id, title, updated_at, pinned FROM conversations ORDER BY pinned DESC, updated_at DESC").fetchall()
+        rows = conn.execute("SELECT id, title, updated_at, pinned, workspace_id FROM conversations WHERE workspace_id IS ? "
+                            "ORDER BY pinned DESC, updated_at DESC", (workspace_id,)).fetchall()
         return [{**dict(r), "pinned": bool(r["pinned"])} for r in rows]
     finally:
         conn.close()
@@ -39,7 +41,7 @@ def list_all() -> list[dict]:
 def get(conv_id: int) -> dict | None:
     conn = assistant_db.connect()
     try:
-        c = conn.execute("SELECT id, title, updated_at, pinned FROM conversations WHERE id = ?", (conv_id,)).fetchone()
+        c = conn.execute("SELECT id, title, updated_at, pinned, workspace_id FROM conversations WHERE id = ?", (conv_id,)).fetchone()
         if c is None:
             return None
         rows = conn.execute("SELECT * FROM messages WHERE conv_id = ? ORDER BY id", (conv_id,)).fetchall()

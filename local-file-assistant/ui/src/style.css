@@ -896,3 +896,15 @@ body.overlay.overlay-compact .mark-overlay, body.overlay.overlay-compact .overla
 
 /* "Update ready" (main.js): bottom right, above everything, until Restart or Later */
 .update-bar { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--paper); border: 1px solid var(--ink); box-shadow: 0 4px 14px var(--shadow); font-size: var(--fs-sm); }
+
+/* ---------- workspaces (components/sidebar.js, components/workspace-dialog.js) ---------- */
+.ws-switch { display: grid; gap: 4px; margin: 0 0 10px; }
+.ws-switch .row-gap { flex-wrap: nowrap; }
+.ws-pick { flex: 1; min-width: 0; font: inherit; font-size: var(--fs-sm); padding: 4px 6px; background: var(--paper); color: var(--ink); border: 1px solid var(--line); }
+.ws-btn { flex-shrink: 0; width: 26px; height: 26px; display: grid; place-content: center; background: none; border: 1px solid var(--line); color: var(--ink-dim); cursor: pointer; }
+.ws-btn:hover { background: var(--hover); color: var(--ink); }
+.ws-dialog { width: min(520px, calc(100vw - 32px)); border: 1px solid var(--ink); background: var(--paper); color: var(--ink); padding: 20px; }
+.ws-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.ws-dialog h2 { margin: 0; font-size: var(--fs-md); }
+.ws-dialog input[type="text"], .ws-dialog select { font: inherit; padding: 6px 8px; background: var(--paper); color: var(--ink); border: 1px solid var(--line); }
+.ws-folders { margin: 0; padding-left: 18px; display: grid; gap: 6px; overflow-wrap: anywhere; }

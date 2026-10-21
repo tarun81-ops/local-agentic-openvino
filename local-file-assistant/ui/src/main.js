@@ -11,6 +11,7 @@ import { el, notice } from './components/common.js';
 import { mascot } from './components/mascot.js';
 import { applyCached, loadAppearance } from './appearance.js';
 import { renderSidebar } from './components/sidebar.js';
+import { workspaceDialog } from './components/workspace-dialog.js';
 import { render as renderChat } from './pages/chat.js';
 import { render as renderFind } from './pages/find.js';
 import { render as renderOrganize } from './pages/organize.js';
@@ -26,7 +27,16 @@ const MOVED = { index: 'files', memory: 'memory' };
 
 const sidebar = document.getElementById('sidebar');
 const content = document.getElementById('content');
-const state = { page: 'chat', chatId: null, openChat: null, prefill: null, collections: [], recent: [], status: { connected: false, model: '' }, cleanup: null, ready: false };
+const state = { page: 'chat', chatId: null, openChat: null, prefill: null, collections: [], recent: [], status: { connected: false, model: '' }, cleanup: null, ready: false, workspaces: [], workspace: savedWorkspace() };
+
+// The workspace you were in, kept per PC in this browser profile (a convenience; null = "All files").
+function savedWorkspace() {
+  try {
+    return Number(localStorage.getItem('lfa.workspace')) || null;
+  } catch {
+    return null;
+  }
+}
 
 function drawSidebar() {
   renderSidebar(sidebar, {
@@ -41,7 +51,40 @@ function drawSidebar() {
     status: state.status,
     collections: state.collections,
     onOpenCollection: (c) => show('search', { prefill: { collectionId: c.id } }),
+    workspaces: state.workspaces,
+    workspace: state.workspace,
+    onWorkspace: switchWorkspace,
+    onNewWorkspace: () => workspaceDialog({ onCreated: async (ws) => { await refreshWorkspaces(); switchWorkspace(ws.id); } }),
+    onDeleteWorkspace: deleteWorkspace,
   });
+}
+
+async function refreshWorkspaces() {
+  try {
+    state.workspaces = (await api.workspaces()).workspaces;
+  } catch { /* keep the list we have */ }
+  if (state.workspace && !state.workspaces.some((w) => w.id === state.workspace)) state.workspace = null; // deleted elsewhere
+  drawSidebar();
+}
+
+// Each workspace has its own chats; switching starts a new chat there.
+function switchWorkspace(id) {
+  state.workspace = id || null;
+  try {
+    localStorage.setItem('lfa.workspace', String(state.workspace || ''));
+  } catch { /* remembered for this session only */ }
+  state.recent = [];
+  show('chat', { chatId: null });
+  refreshRecent();
+}
+
+async function deleteWorkspace(ws) {
+  if (!confirm(`Delete the workspace "${ws.name}"? Its chats move to All files. No file on your PC is deleted.`)) return;
+  try {
+    await api.deleteWorkspace(ws.id);
+  } catch { /* the list below shows what is left */ }
+  await refreshWorkspaces();
+  switchWorkspace(null);
 }
 
 async function refreshCollections() {
@@ -54,7 +97,7 @@ async function refreshCollections() {
 async function refreshRecent(openId) {
   if (openId != null) state.openChat = openId; // a new chat got its id with its first reply
   try {
-    state.recent = (await api.conversations()).conversations;
+    state.recent = (await api.conversations(state.workspace)).conversations;
   } catch { /* keep the list we have */ }
   drawSidebar();
 }
@@ -70,7 +113,7 @@ async function deleteChat(id) {
 }
 
 async function clearChats() {
-  if (!confirm('Delete all your recent chats? This can’t be undone.')) return;
+  if (!confirm('Delete all the chats listed here? This can’t be undone.')) return;
   const ids = state.recent.map((c) => c.id);
   await Promise.allSettled(ids.map((id) => api.deleteConversation(id)));
   state.recent = [];
@@ -120,6 +163,7 @@ function show(page, { chatId, prefill } = {}) {
       onCollectionsChanged: refreshCollections,
       navigate: show,
       onChatsChanged: refreshRecent,
+      workspaceId: state.workspace,
       onStatusChanged: refreshStatus,
     }) || null;
 }
@@ -155,6 +199,7 @@ async function boot() {
   } catch { /* setup stays reachable from Settings */ }
   show(state.page, { prefill: state.prefill });
   refreshRecent();
+  refreshWorkspaces();
   refreshCollections();
   refreshStatus();
   setInterval(refreshStatus, 30000);

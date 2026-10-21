@@ -477,12 +477,13 @@ def unreadable_reason(p: Path, exc: Exception) -> str:
 
 # ---------- the whole plan ----------
 
-def gather(question: str, content_hits: list[dict] | None = None, owner_name: str | None = None, exclude: tuple = ()):
+def gather(question: str, content_hits: list[dict] | None = None, owner_name: str | None = None, exclude: tuple = (), within: tuple = ()):
     """Generator of progress dicts ({"step": ..., "detail": ...}); returns (via StopIteration.value)
     {"chunks": [...], "files": [...], "others": [{"name", "path", "people"}]}. The caller streams the progress.
 
     owner_name (set for questions about the user's own documents): read up to MAX_READ_OWNER files, stop at the
-    first one in the user's name, and leave out files that are clearly someone else's ("others")."""
+    first one in the user's name, and leave out files that are clearly someone else's ("others").
+    within: a workspace's folders; files outside them are dropped before anything is opened."""
     plan = understand(question)
     mine = owner_name is not None
     yield {"step": "plan", "detail": "Looking for: " + (", ".join(plan["keywords"]) or "(no search words)")
@@ -494,6 +495,9 @@ def gather(question: str, content_hits: list[dict] | None = None, owner_name: st
         others = [{"name": c["name"], "path": c["path"], "people": [c["person"]]} for c in theirs]
     else:
         cands = [c for c in candidates(plan, content_hits) if c["path"] not in set(exclude)]
+    if within:
+        cands = [c for c in cands if pc_access.under(c["path"], list(within))]
+        others = [o for o in others if pc_access.under(o["path"], list(within))]
     photos = sum(1 for c in cands if c.get("via") == "photo")
     known = sum(1 for c in cands if c.get("via") == "card")
     yield {"step": "found", "detail": f"{len(cands)} file(s) on this PC match by name or content"

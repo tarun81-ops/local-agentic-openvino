@@ -10,7 +10,7 @@ from app.core import doc_kinds, doc_photos, owner, pc_access, personalize, ram
 from app.core.parsers import pdf_parser
 from datetime import datetime
 
-from app.core.assistant import actions, chat_recall, conversation, file_agent, memory_store, prompts, tasks
+from app.core.assistant import actions, chat_recall, conversation, file_agent, memory_store, prompts, tasks, workspaces
 from app.core.assistant.tools import intents
 from app.core.assistant.tools.registry import ToolError
 from app.core import calc, facts, find_file
@@ -31,6 +31,7 @@ class ChatRequest(BaseModel):
     conversation_id: int | None = None
     mode: str = "auto"  # "auto" | "files" | "chat"
     root: str | None = None
+    workspace_id: int | None = None  # a new chat's workspace; an existing chat keeps its own
     model: str | None = None
     style: str | None = None  # one-question override of the saved answer style
     language: str | None = None  # same, for the reply language
@@ -45,7 +46,7 @@ def _public(chunk: dict) -> dict:
     return {k: chunk[k] for k in ("path", "name", "loc_kind", "loc_no", "snippet", "match")}
 
 
-def _pc_lookup(query: str, message: str, kind: str, chunks: list[dict], who: dict | None = None):
+def _pc_lookup(query: str, message: str, kind: str, chunks: list[dict], who: dict | None = None, within: tuple = ()):
     """Whole-PC access: when it is on and the question is about a document, find files by name across the
     enabled drives and read the best ones live. Yields progress events and returns (chunks, kind). Never
     raises: a failure here leaves the normal search results as they were.
@@ -53,8 +54,8 @@ def _pc_lookup(query: str, message: str, kind: str, chunks: list[dict], who: dic
     questions about the user's own documents (see core/owner.py)."""
     if not pc_access.enabled() or not (kind == "files" or file_agent.agent_worthy(message)):
         return chunks, kind
-    gen = (file_agent.gather(query, content_hits=chunks, owner_name=who["name"], exclude=tuple(who["exclude"])) if who is not None
-           else file_agent.gather(query, content_hits=chunks))
+    gen = (file_agent.gather(query, content_hits=chunks, owner_name=who["name"], exclude=tuple(who["exclude"]), within=within) if who is not None
+           else file_agent.gather(query, content_hits=chunks, within=within))
     try:
         while True:
             try:
@@ -203,11 +204,11 @@ def _title_chunks(path: str, message: str) -> list[dict]:
     return got
 
 
-def _title_lookup(message: str, kind: str, chunks: list[dict]):
+def _title_lookup(message: str, kind: str, chunks: list[dict], within: tuple = ()):
     """Nothing in the files matched the words, but the message may be a file's title typed by sound
     ("gunaho ke devata" for "Gunahon Ka Devta.pdf"). Yields progress; returns (chunks, kind). Never raises."""
     try:
-        hits = find_file.title_hits(message)
+        hits = [h for h in find_file.title_hits(message) if not within or pc_access.under(h["path"], list(within))]
         if not hits:
             return chunks, kind
         found: list[dict] = []
@@ -484,6 +485,8 @@ def _stream(req: ChatRequest, conv: dict | None):
     if follow:
         yield _sse("pc_step", {"step": "plan", "detail": f"Asking again: \u201c{ask}\u201d"
                                 + (f" in the name of {who['name']}" if who and who["name"] else "")})
+    ws = workspaces.get(req.workspace_id)
+    within = tuple(ws["roots"]) if ws else ()  # [] = the whole PC: no limit
     chunks: list[dict] = []
     kind = req.mode if req.mode in ("files", "chat") else "auto"
     if kind == "auto" and organize_intent(req.message):
@@ -512,7 +515,7 @@ def _stream(req: ChatRequest, conv: dict | None):
         else:
             query = rewrite_query(req.message, history, req.model) if history and needs_rewrite(req.message) else req.message
         try:
-            found = hybrid_search(query, root=req.root, limit=6)
+            found = hybrid_search(query, root=req.root, limit=6, within=list(within) or None)
         except Exception as exc:  # e.g. a locked or damaged index: say so, don't leave "Searching…" up
             log.exception("search failed")
             yield _sse("error", {"detail": f"Couldn't search your files: {exc}"})
@@ -523,14 +526,14 @@ def _stream(req: ChatRequest, conv: dict | None):
         if kind == "files":
             yield _sse("results", {"results": [_public(c) for c in chunks], "semantic": found["semantic"]})
         before, was = len(chunks), kind
-        chunks, kind = yield from _pc_lookup(query, ask, kind, chunks, who)
+        chunks, kind = yield from _pc_lookup(query, ask, kind, chunks, who, within)
         if kind != was:
             yield _sse("route", {"route": kind})
         if len(chunks) != before:
             yield _sse("results", {"results": [_public(c) for c in chunks], "semantic": found["semantic"]})
         if kind == "chat" or not chunks:
             was = kind
-            chunks, kind = yield from _title_lookup(req.message, kind, chunks)
+            chunks, kind = yield from _title_lookup(req.message, kind, chunks, within)
             if kind != was:
                 yield _sse("route", {"route": kind})
             if kind == "files" and chunks:
@@ -629,7 +632,8 @@ def _stream(req: ChatRequest, conv: dict | None):
     answer = ""
     truncated = False
     pz = personalize.get_all()
-    chosen = req.style if req.style in personalize.STYLES else _folder_style(req.root, chunks) or pz["answer_style"]  # request > folder > saved default
+    ws_style = ws["answer_style"] if ws else ""
+    chosen = req.style if req.style in personalize.STYLES else ws_style or _folder_style(req.root, chunks) or pz["answer_style"]  # request > workspace > folder > saved default
     style = prompts.style_instruction(chosen, req.language if req.language in personalize.LANGUAGES else pz["language"], pz["cite_pages"])
     # Order: screen context, profile, memory, then the message. The search used the bare message.
     asked = ask
@@ -694,7 +698,7 @@ def _finish(req: ChatRequest, conv: dict | None, done: dict):
     """Saves the exchange (only complete ones, so history never holds a dangling question)."""
     meta = {k: done[k] for k in ("route", "citations", "uncited", "truncated", "no_results", "memory_used", "recall_used", "files", "locked") if k in done}
     title = conv["title"] if conv else conversation.title_from(req.message)
-    conv_id = conv["id"] if conv else conversation.create(title)["id"]
+    conv_id = conv["id"] if conv else conversation.create(title, workspace_id=req.workspace_id)["id"]
     _, answer_id = conversation.add_messages(conv_id, [("user", req.message, {}), ("assistant", done["answer"], meta)])
     yield _sse("conversation", {"id": conv_id, "title": title, "message_id": answer_id})
     yield _sse("done", done)
@@ -708,4 +712,7 @@ def chat(req: ChatRequest):
         conv = conversation.get(req.conversation_id)
         if conv is None:
             raise HTTPException(404, "No such conversation")
+        req.workspace_id = conv["workspace_id"]  # a chat stays in the workspace it was started in
+    elif workspaces.get(req.workspace_id) is None:
+        req.workspace_id = None  # deleted meanwhile (or never existed): the chat goes to "All files"
     return StreamingResponse(_stream(req, conv), media_type="text/event-stream")

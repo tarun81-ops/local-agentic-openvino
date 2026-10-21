@@ -194,6 +194,11 @@ def _skipped_part(path: Path, extra: list[str], drives: list[str]) -> bool:
     return False
 
 
+def under(path: Path | str, roots: list[str]) -> bool:
+    """path is one of roots or inside one (case-insensitive on Windows). Keeps a workspace's chat in its folders."""
+    return _under(Path(path), roots)
+
+
 def _under(path: Path, roots: list[str]) -> bool:
     p = os.path.normcase(str(path))
     for r in roots:

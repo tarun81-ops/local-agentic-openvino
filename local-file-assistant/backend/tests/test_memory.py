@@ -147,7 +147,7 @@ def test_file_answers_get_no_memories_and_show_the_cited_line(client, monkeypatc
     memory_store.add("user is in class 12")
     chunk = {"path": "C:/d/class 10.pdf", "name": "class 10.pdf", "loc_kind": "page", "loc_no": 1, "match": "both",
              "snippet": ROLL_PAGE[:120], "text": ROLL_PAGE}
-    monkeypatch.setattr(routes_chat, "hybrid_search", lambda q, root=None, limit=6: {"results": [chunk], "semantic": True})
+    monkeypatch.setattr(routes_chat, "hybrid_search", lambda q, root=None, limit=6, within=None: {"results": [chunk], "semantic": True})
     seen = []
 
     def answer(question, chunks, history=None, model=None, style=""):

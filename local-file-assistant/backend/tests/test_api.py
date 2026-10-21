@@ -131,7 +131,7 @@ def test_chat_streams_results_tokens_then_a_checked_done(client, monkeypatch):
 
     chunk = {"path": "C:/d/invoice.pdf", "name": "invoice.pdf", "loc_kind": "page", "loc_no": 1, "match": "both",
              "snippet": "total $4,250", "text": "The invoice total for Acme Corp is $4,250."}
-    monkeypatch.setattr(routes_chat, "hybrid_search", lambda q, root=None, limit=6: {"results": [chunk], "semantic": True})
+    monkeypatch.setattr(routes_chat, "hybrid_search", lambda q, root=None, limit=6, within=None: {"results": [chunk], "semantic": True})
 
     def answer(question, chunks, history=None, model=None, style=""):
         yield "Acme Corp owes $4,250 "

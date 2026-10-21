@@ -119,7 +119,7 @@ def test_search_lists_files_whose_names_sound_alike(client, books):  # noqa: F81
 def test_chat_answers_from_a_file_named_by_sound(client, books, monkeypatch):  # noqa: F811
     from app.api import routes_chat
 
-    monkeypatch.setattr(routes_chat, "hybrid_search", lambda q, root=None, limit=6: {"results": [], "semantic": False})
+    monkeypatch.setattr(routes_chat, "hybrid_search", lambda q, root=None, limit=6, within=None: {"results": [], "semantic": False})
     seen = {}
 
     def answer(question, chunks, history=None, model=None, style=""):
@@ -142,7 +142,7 @@ def test_chat_answers_from_a_file_named_by_sound(client, books, monkeypatch):  #
 def test_small_talk_still_goes_to_chat(client, books, monkeypatch):  # noqa: F811
     from app.api import routes_chat
 
-    monkeypatch.setattr(routes_chat, "hybrid_search", lambda q, root=None, limit=6: {"results": [], "semantic": False})
+    monkeypatch.setattr(routes_chat, "hybrid_search", lambda q, root=None, limit=6, within=None: {"results": [], "semantic": False})
     monkeypatch.setattr(routes_chat, "chat_stream", lambda *a, **k: iter(["Hi!"]))
     events = _events(client.post("/chat", json={"message": "hii"}, headers=AUTH).text)
     assert [d["route"] for k, d in events if k == "route"][-1] == "chat"

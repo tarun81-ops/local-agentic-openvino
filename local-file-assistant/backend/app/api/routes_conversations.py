@@ -16,8 +16,9 @@ class Import(BaseModel):
 
 
 @router.get("")
-def list_conversations():
-    return {"conversations": conversation.list_all()}
+def list_conversations(workspace: int | None = None):
+    """The chats of one workspace; no `workspace` = the "All files" chats."""
+    return {"conversations": conversation.list_all(workspace)}
 
 
 @router.post("")

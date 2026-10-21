@@ -56,8 +56,8 @@ export async function waitForBackend({ timeoutMs = 120000, onWaiting } = {}) { /
 }
 
 /** POST /chat and dispatch its server-sent events: route, results, token, conversation, done, error. */
-export function chat({ message, conversationId, mode, root, context, style, language }, handlers, signal) {
-  return stream('/chat', { message, conversation_id: conversationId ?? null, mode: mode || 'auto', root: root || null, context: context || null, style: style || null, language: language || null }, handlers, signal);
+export function chat({ message, conversationId, workspaceId, mode, root, context, style, language }, handlers, signal) {
+  return stream('/chat', { message, conversation_id: conversationId ?? null, workspace_id: workspaceId ?? null, mode: mode || 'auto', root: root || null, context: context || null, style: style || null, language: language || null }, handlers, signal);
 }
 
 /** POST /setup/model/pull: progress, then done / failed / cancelled. Aborting only stops listening; api.setupCancel() stops the download. */
@@ -210,7 +210,11 @@ export const api = {
     if (!r.ok) throw new ApiError(r.status, 'Export failed');
     return r.text();
   },
-  conversations: () => request('/conversations'),
+  conversations: (workspace) => request('/conversations', { query: { workspace } }), // no workspace = "All files"
+  // Workspaces (backend/app/api/routes_workspaces.py): {name, roots ([] = whole PC), answer_style}
+  workspaces: () => request('/workspaces'),
+  createWorkspace: (body) => request('/workspaces', { method: 'POST', body }),
+  deleteWorkspace: (id) => request(`/workspaces/${id}`, { method: 'DELETE' }),
   conversation: (id) => request(`/conversations/${id}`),
   deleteConversation: (id) => request(`/conversations/${id}`, { method: 'DELETE' }),
   importConversations: (chats) => request('/conversations/import', { method: 'POST', body: { chats } }),

@@ -43,7 +43,7 @@ def _chunk(path, n=1):
 
 
 def test_chat_adds_pc_files_and_switches_to_files_route(pc, monkeypatch):
-    def fake_gather(question, content_hits=None):
+    def fake_gather(question, content_hits=None, within=()):
         yield {"step": "plan", "detail": "Looking for: bill"}
         return {"chunks": [_chunk(pc / "Docs" / "bill.txt")], "files": [str(pc / "Docs" / "bill.txt")]}
 
@@ -55,7 +55,7 @@ def test_chat_adds_pc_files_and_switches_to_files_route(pc, monkeypatch):
 
 def test_chat_does_not_duplicate_chunks_already_found(pc, monkeypatch):
     existing = _chunk(pc / "Docs" / "bill.txt")
-    monkeypatch.setattr(file_agent, "gather", lambda q, content_hits=None: iter(()) if False else _gen({"chunks": [existing], "files": []}))
+    monkeypatch.setattr(file_agent, "gather", lambda q, content_hits=None, within=(): iter(()) if False else _gen({"chunks": [existing], "files": []}))
     _events, (chunks, kind) = _drain(routes_chat._pc_lookup("bill", "my bill file", "files", [existing]))
     assert len(chunks) == 1 and kind == "files"
 
@@ -74,7 +74,7 @@ def test_chat_is_untouched_when_pc_access_is_off(pc, monkeypatch):
 
 
 def test_chat_survives_an_agent_failure(pc, monkeypatch):
-    def boom(question, content_hits=None):
+    def boom(question, content_hits=None, within=()):
         raise RuntimeError("model exploded")
         yield  # pragma: no cover
 

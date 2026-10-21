@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 
 from app.config import settings
+from app.core import pc_access
 from app.core.assistant import learning
 from app.core.search import fts_search, reranker, vector_search
 from app.db import sqlite_fts, vector_store
@@ -84,13 +85,17 @@ def _drop_hidden(rows: list[dict], skip: list[str]) -> list[dict]:
         conn.close()
 
 
-def hybrid_search(q: str, root: str | None = None, limit: int = 6) -> dict:
+def hybrid_search(q: str, root: str | None = None, limit: int = 6, within: list[str] | None = None) -> dict:
     """Keyword + semantic search, then (when a model is installed) a cross-encoder re-ranks the
     top RERANK_POOL. Keyword search always runs; semantic search and re-ranking are skipped
     (not fatal) when their model is missing, down or slow."""
     rerank_on = reranker.available()
     # A wider pool lets a habitually opened file rise into view even when the re-ranker is off.
     pool = max(limit, RERANK_POOL) if (rerank_on or settings.open_prior_max_shift > 0) else limit
+    # within: a workspace's folders. ponytail: filtered after search from a 4x pool; a SQL path-prefix filter if
+    # a workspace's folders hold a small share of a very large index and its hits fall outside the pool.
+    if within:
+        pool *= 4
     conn = sqlite_fts.connect(settings.db_path)
     try:
         skip = _hidden_roots_when_off(conn)
@@ -123,6 +128,8 @@ def hybrid_search(q: str, root: str | None = None, limit: int = 6) -> dict:
             reranked = True
         except Exception as exc:  # a broken model file must not break search
             log.warning("re-ranking skipped: %s", exc)
+    if within:
+        merged = [r for r in merged if pc_access.under(r["path"], within)]
     merged = _apply_open_prior(q, _drop_hidden(merged, skip))[:limit]
 
     query_terms = fts_search.terms(q)

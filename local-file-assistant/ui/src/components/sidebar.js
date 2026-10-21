@@ -24,16 +24,19 @@ const NAV_ALIAS = { search: 'find', index: 'settings', memory: 'settings' }; // 
  * @param {()=>void} [p.onClearChats]  removes every chat
  * @param {number|null} [p.openChat]  the chat on screen, marked in the list
  * @param {{model?:string, connected?:boolean}} p.status
+ * @param {Array<{id:number,name:string}>} [p.workspaces]  the switcher's list; p.workspace is the current id (null = All files)
  */
 const ROW_HEIGHT = 40;
 
-export function renderSidebar(root, { active, onSelect, onNewChat, recent, onOpenChat, onDeleteChat, onClearChats, openChat = null, status, collections = [], onOpenCollection }) {
+export function renderSidebar(root, { active, onSelect, onNewChat, recent, onOpenChat, onDeleteChat, onClearChats, openChat = null, status, collections = [], onOpenCollection,
+  workspaces = [], workspace = null, onWorkspace, onNewWorkspace, onDeleteWorkspace }) {
   const current = NAV_ALIAS[active] || active;
   const activeIndex = Math.max(0, NAV_ITEMS.findIndex((item) => item.id === current));
   const firstSetup = NAV_ITEMS.findIndex((item) => item.setup);
   const indicatorTop = activeIndex * ROW_HEIGHT + (activeIndex >= firstSetup ? RULE_HEIGHT : 0);
   root.replaceChildren(
     el('div', { class: 'brand' }, mascot({ size: 34, flat: true }), el('div', { class: 'brand-name' }, 'Local File Assistant')),
+    workspaceSwitcher({ workspaces, workspace, onWorkspace, onNewWorkspace, onDeleteWorkspace }),
     el('button', { type: 'button', class: `new-chat ${active === 'chat' ? 'new-chat-primary' : ''}`, onclick: onNewChat }, '+ New chat'),
     el(
       'nav',
@@ -94,4 +97,20 @@ export function renderSidebar(root, { active, onSelect, onNewChat, recent, onOpe
       el('div', { class: 'tag-local' }, 'Local'),
     ),
   );
+}
+
+// Top of the sidebar: which workspace chat answers from. "All files" = no workspace (every file the app can read).
+function workspaceSwitcher({ workspaces, workspace, onWorkspace, onNewWorkspace, onDeleteWorkspace }) {
+  if (!onWorkspace) return '';
+  const pick = el('select', { id: 'workspace-pick', class: 'ws-pick', 'aria-label': 'Workspace' },
+    el('option', { value: '' }, 'All files'),
+    ...workspaces.map((w) => el('option', { value: String(w.id) }, w.name)));
+  pick.value = workspace ? String(workspace) : '';
+  pick.addEventListener('change', () => onWorkspace(Number(pick.value) || null));
+  const current = workspaces.find((w) => w.id === workspace);
+  return el('div', { class: 'ws-switch' },
+    el('label', { for: 'workspace-pick', class: 'recent-h' }, 'Workspace'),
+    el('div', { class: 'row-gap' }, pick,
+      el('button', { type: 'button', class: 'ws-btn', title: 'New workspace', 'aria-label': 'New workspace', onclick: onNewWorkspace }, '+'),
+      current ? el('button', { type: 'button', class: 'ws-btn', title: 'Delete this workspace (files are kept)', 'aria-label': `Delete workspace ${current.name}`, onclick: () => onDeleteWorkspace(current) }, svg(ICONS.close, 12)) : ''));
 }
