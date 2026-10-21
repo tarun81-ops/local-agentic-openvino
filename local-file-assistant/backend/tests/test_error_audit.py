@@ -115,7 +115,7 @@ def test_D_class_12_question_reads_the_class_12_page_of_a_combined_file(tmp_path
     f = tmp_path / "10th&12th.pdf"
     f.write_bytes(b"x")
     monkeypatch.setattr(file_agent, "_parsers", lambda: {".pdf": lambda p: chunk_located("page", 1, TENTH) + chunk_located("page", 2, TWELFTH)})
-    monkeypatch.setattr(pc_access, "can_read", lambda p: (True, ""))
+    monkeypatch.setattr(pc_access, "can_read", lambda p, explicit=False: (True, ""))
     got, problem = file_agent.read_chunks(str(f), "what is my class 12 roll no", ["class", "12", "roll"])
     pages = {c["loc_no"] for c in got}
     assert 2 in pages and 1 not in pages
@@ -125,7 +125,7 @@ def test_D_class_10_question_reads_the_class_10_page(tmp_path, monkeypatch):
     f = tmp_path / "10th&12th.pdf"
     f.write_bytes(b"x")
     monkeypatch.setattr(file_agent, "_parsers", lambda: {".pdf": lambda p: chunk_located("page", 1, TENTH) + chunk_located("page", 2, TWELFTH)})
-    monkeypatch.setattr(pc_access, "can_read", lambda p: (True, ""))
+    monkeypatch.setattr(pc_access, "can_read", lambda p, explicit=False: (True, ""))
     got, _ = file_agent.read_chunks(str(f), "my 10th roll number", ["10th", "roll"])
     assert {c["loc_no"] for c in got} == {1}
 
@@ -145,7 +145,7 @@ def _locked_pdf(path, password="TARU2007"):
 def test_E_a_locked_pdf_says_it_needs_a_password(tmp_path, monkeypatch):
     f = tmp_path / "EAadhaarcard.pdf"
     _locked_pdf(f)
-    monkeypatch.setattr(pc_access, "can_read", lambda p: (True, ""))
+    monkeypatch.setattr(pc_access, "can_read", lambda p, explicit=False: (True, ""))
     got, problem = file_agent.read_chunks(str(f), "my aadhaar", ["aadhaar"])
     assert got == [] and "password" in problem.lower()
     assert "ValueError" not in problem
@@ -154,7 +154,7 @@ def test_E_a_locked_pdf_says_it_needs_a_password(tmp_path, monkeypatch):
 def test_E_the_user_can_unlock_it_in_chat_and_the_password_is_not_saved(chat, tmp_path, monkeypatch):
     f = tmp_path / "EAadhaarcard.pdf"
     _locked_pdf(f)
-    monkeypatch.setattr(pc_access, "can_read", lambda p: (True, ""))
+    monkeypatch.setattr(pc_access, "can_read", lambda p, explicit=False: (True, ""))
     monkeypatch.setattr(routes_chat.pc_access, "enabled", lambda: True)
 
     def gather(question, content_hits=None, **k):
@@ -176,7 +176,7 @@ def test_E_the_user_can_unlock_it_in_chat_and_the_password_is_not_saved(chat, tm
 def test_F_an_unreachable_file_gets_a_plain_reason_not_errno(tmp_path, monkeypatch):
     f = tmp_path / "UNIT-1 CPL notes.pdf"
     f.write_bytes(b"x")
-    monkeypatch.setattr(pc_access, "can_read", lambda p: (True, ""))
+    monkeypatch.setattr(pc_access, "can_read", lambda p, explicit=False: (True, ""))
 
     def boom(p):
         raise OSError(22, "Invalid argument")

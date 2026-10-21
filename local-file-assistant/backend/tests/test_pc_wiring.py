@@ -143,7 +143,7 @@ def test_marks_passage_wins_over_the_header_passage(tmp_path, monkeypatch):
     chunks = [type("C", (), {"text": " ".join(header)})(), type("C", (), {"text": " ".join(table)})()]
     f = tmp_path / "class 10.pdf"
     f.write_bytes(b"x")
-    monkeypatch.setattr(file_agent.pc_access, "can_read", lambda p: (True, ""))
+    monkeypatch.setattr(file_agent.pc_access, "can_read", lambda p, explicit=False: (True, ""))
     monkeypatch.setattr(file_agent, "_parsers", lambda: {".pdf": lambda p: [type("C", (), {"text": c.text, "loc_kind": "page", "loc_no": 1})() for c in chunks]})
     monkeypatch.setattr(file_agent, "MAX_CHUNKS_PER_FILE", 1)
     got, why = file_agent.read_chunks(str(f), "what is my class 10 percentage", ["class", "10", "percentage"])
@@ -173,7 +173,7 @@ def test_slow_reads_are_remembered_and_re_read_when_the_file_changes(tmp_path, m
     f = tmp_path / "class 10.pdf"
     f.write_bytes(b"x")
     calls: list[int] = []
-    monkeypatch.setattr(file_agent.pc_access, "can_read", lambda p: (True, ""))
+    monkeypatch.setattr(file_agent.pc_access, "can_read", lambda p, explicit=False: (True, ""))
     monkeypatch.setattr(file_agent, "_parsers", lambda: {".pdf": _slow_parser(calls, 0.05)})
     monkeypatch.setattr(file_agent, "CACHE_IF_SLOWER_S", 0.01)
     file_agent.read_chunks(str(f), "marks", ["marks"])
@@ -193,7 +193,7 @@ def test_fast_reads_are_not_cached_and_forget_clears_the_cache(tmp_path, monkeyp
     f = tmp_path / "a.txt"
     f.write_text("x")
     calls: list[int] = []
-    monkeypatch.setattr(file_agent.pc_access, "can_read", lambda p: (True, ""))
+    monkeypatch.setattr(file_agent.pc_access, "can_read", lambda p, explicit=False: (True, ""))
     monkeypatch.setattr(file_agent, "_parsers", lambda: {".txt": _slow_parser(calls)})
     file_agent.read_chunks(str(f), "q", ["marks"])
     file_agent.read_chunks(str(f), "q", ["marks"])

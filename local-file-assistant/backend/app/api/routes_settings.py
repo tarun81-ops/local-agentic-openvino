@@ -27,6 +27,7 @@ def get_settings():
         "server": {**server_status(), "autostart": ovms_runner.status()},
         "provider": "openvino",
         "memory": ram.status(),
+        "store_file_text": settings.store_file_text,  # False = names-only: nothing can be kept in an index
     }
 
 

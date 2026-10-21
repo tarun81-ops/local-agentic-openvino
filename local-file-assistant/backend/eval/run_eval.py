@@ -11,6 +11,7 @@ Each line of the questions file is JSON:
   expect: every inner list must have at least one alternative in the answer (case-insensitive).
   file:   the file the answer should come from (retrieval + citation are checked against it).
   {"q": "...", "no_answer": true}  -> the files don't contain this; the model should say so.
+  {"q": "...", "no_answer": true, "mode": "files_only"}  -> FILES ONLY: refused even if the model knows it.
 
 Uses a throwaway index (never your real one) and needs OpenVINO Model Server running with both models exported.
 Writes eval\\results\\<time>.json and prints a summary.
@@ -256,6 +257,10 @@ def main() -> int:
         if free is not None:
             min_free = free if min_free is None else min(min_free, free)
         verdict = verify(answer, chunks)
+        if item.get("mode") == "files_only":  # the FILES ONLY gate the chat applies after verifying
+            from app.api.routes_chat import files_only
+
+            answer, verdict = files_only(answer, verdict)
         s = score(item, answer, chunks, verdict)
         rows.append({"item": item, "answer": answer, "score": s, "relevance": relevance(item["q"], answer, chunks, verdict), "first_token_s": first, "total_s": round(total, 2)})
         mark = {True: "PASS", False: "FAIL", None: "----"}[s["correct"]]

@@ -908,3 +908,9 @@ body.overlay.overlay-compact .mark-overlay, body.overlay.overlay-compact .overla
 .ws-dialog h2 { margin: 0; font-size: var(--fs-md); }
 .ws-dialog input[type="text"], .ws-dialog select { font: inherit; padding: 6px 8px; background: var(--paper); color: var(--ink); border: 1px solid var(--line); }
 .ws-folders { margin: 0; padding-left: 18px; display: grid; gap: 6px; overflow-wrap: anywhere; }
+
+/* ---------- files added to a question (pages/chat.js): drop on the chat or the paperclip ---------- */
+.ask-files:empty { display: none; }
+.chip-x { margin-left: 4px; border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+.chat-docked.drop-on .composer-v2, .drop-on .ask-box { outline: 2px dashed var(--blue); outline-offset: 4px; }
+.keep-row { margin-top: 8px; }

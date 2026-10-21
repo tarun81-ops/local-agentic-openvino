@@ -378,12 +378,13 @@ def by_meaning(question: str, parsed: list) -> list | None:
     return [pool[i] for i in sorted(best)]
 
 
-def read_chunks(path: str, question: str, terms: list[str], owner_name: str | None = None) -> tuple[list[dict], str]:
+def read_chunks(path: str, question: str, terms: list[str], owner_name: str | None = None, explicit: bool = False) -> tuple[list[dict], str]:
     """(chunks, problem). Parses the file now and keeps the passages that share the most words with the
     question. problem is "" on success, else a short reason shown in the step log.
     owner_name: also say whose document it is, from the WHOLE text (the name is often not in the passages
-    kept): every chunk gets "owner" ("yes" | "no" | "unknown") and "people" (names in its name fields)."""
-    ok, why = pc_access.can_read(path)
+    kept): every chunk gets "owner" ("yes" | "no" | "unknown") and "people" (names in its name fields).
+    explicit: a file the user dropped on the chat (pc_access.can_read)."""
+    ok, why = pc_access.can_read(path, explicit)
     if not ok:
         return [], why
     p = Path(path)

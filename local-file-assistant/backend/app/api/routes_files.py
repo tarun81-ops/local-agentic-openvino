@@ -316,3 +316,27 @@ def open_file(req: PathRequest):
     except Exception:
         pass  # learning must never stop a file from opening
     return {"opened": str(path)}
+
+
+@router.post("/keep")
+def keep_file(req: PathRequest):
+    """"Keep in index" on a file dropped into chat: until then it was only read for that answer, never stored.
+    Refused in names-only mode (the app keeps no file text at all) and for credential-like files.
+    ponytail: a kept file outside the indexed folders is a snapshot (the watcher doesn't follow it); drop it again
+    after it changes."""
+    from app.core import pc_access
+
+    _no_text_store()
+    path = Path(req.path)
+    ok, why = pc_access.can_read(path, explicit=True)
+    if not ok:
+        raise HTTPException(status_code=400, detail=why)
+    conn = _conn()
+    try:
+        root = sqlite_fts.root_for(conn, path)
+    finally:
+        conn.close()
+    result = indexer.index_file(path, settings.db_path, settings.vector_db_dir, root=Path(root) if root else path.parent)
+    if result in ("failed", "ignored"):
+        raise HTTPException(status_code=400, detail=f"{path.name} couldn't be added to the index ({result}). Its type may not be indexable.")
+    return {"kept": str(path), "result": result}

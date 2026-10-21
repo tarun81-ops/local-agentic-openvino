@@ -493,6 +493,11 @@ ipcMain.handle('overlay:insert', async (_e, text) => {
   }
 });
 ipcMain.handle('app:open-link', (_e, url) => (OPEN_LINKS.has(url) ? shell.openExternal(url).then(() => true) : false));
+ipcMain.handle('dialog:pick-files', async (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const result = await dialog.showOpenDialog(win, { title: 'Add a file to the chat', properties: ['openFile', 'multiSelections'] });
+  return result.canceled ? [] : result.filePaths.slice(0, 3);
+});
 ipcMain.handle('dialog:pick-folder', async (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   const result = await dialog.showOpenDialog(win, { title: 'Choose a folder', properties: ['openDirectory'] });

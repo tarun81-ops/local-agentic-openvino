@@ -56,8 +56,8 @@ export async function waitForBackend({ timeoutMs = 120000, onWaiting } = {}) { /
 }
 
 /** POST /chat and dispatch its server-sent events: route, results, token, conversation, done, error. */
-export function chat({ message, conversationId, workspaceId, mode, root, context, style, language }, handlers, signal) {
-  return stream('/chat', { message, conversation_id: conversationId ?? null, workspace_id: workspaceId ?? null, mode: mode || 'auto', root: root || null, context: context || null, style: style || null, language: language || null }, handlers, signal);
+export function chat({ message, conversationId, workspaceId, attach, mode, root, context, style, language }, handlers, signal) {
+  return stream('/chat', { message, conversation_id: conversationId ?? null, workspace_id: workspaceId ?? null, attach: attach || [], mode: mode || 'auto', root: root || null, context: context || null, style: style || null, language: language || null }, handlers, signal);
 }
 
 /** POST /setup/model/pull: progress, then done / failed / cancelled. Aborting only stops listening; api.setupCancel() stops the download. */
@@ -139,6 +139,7 @@ export const api = {
   pcStop: () => request('/pc/stop', { method: 'POST' }),
   pcForget: () => request('/pc/forget', { method: 'POST' }),
   // query: the search that led here (optional); the backend learns which files you open for which searches
+  keepFile: (path) => request('/files/keep', { method: 'POST', body: { path } }), // a dropped file into the index
   open: (path, query) => request('/files/open', { method: 'POST', body: { path, query: query || '' } }),
   find: (q, limit) => request('/find', { query: { q, limit } }),
   findOpen: (path, query) => request('/find/open', { method: 'POST', body: { path, query: query || '' } }),

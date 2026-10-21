@@ -175,7 +175,7 @@ def test_page_count_follow_up_is_counted_not_guessed(monkeypatch, tmp_path):
     conv = conversation.create("gunaho ke devata")
     conversation.add_messages(conv["id"], [("user", "gunaho ke devata", {}),
                                            ("assistant", "It is a novel.", {"route": "files", "citations": [], "files": [book]})])
-    monkeypatch.setattr(routes_chat, "_title_chunks", lambda path, msg: [chunk(path, "page 1 of a test book")])
+    monkeypatch.setattr(routes_chat, "_title_chunks", lambda path, msg, explicit=False: [chunk(path, "page 1 of a test book")])
 
     def no_model(*a, **k):
         raise AssertionError("page counts must not come from the model")
@@ -196,7 +196,7 @@ def test_recheck_stays_on_the_previous_file(monkeypatch, tmp_path):
     conv = conversation.create("t")
     conversation.add_messages(conv["id"], [("user", "how many pages", {}),
                                            ("assistant", "31 pages", {"route": "files", "citations": [], "files": [book]})])
-    monkeypatch.setattr(routes_chat, "_title_chunks", lambda path, msg: [chunk(path, "Chander and Sudha")])
+    monkeypatch.setattr(routes_chat, "_title_chunks", lambda path, msg, explicit=False: [chunk(path, "Chander and Sudha")])
     seen = {}
 
     def fake_answer(prompt, chunks, history, model=None, style=""):
@@ -280,7 +280,7 @@ def test_file_size_follow_up_is_not_asked_of_the_model(monkeypatch, tmp_path):
     conv = conversation.create("t")
     conversation.add_messages(conv["id"], [("user", "gunaho ke devata", {}),
                                            ("assistant", "A novel.", {"route": "files", "citations": [], "files": [book]})])
-    monkeypatch.setattr(routes_chat, "_title_chunks", lambda path, msg: [chunk(path, "Chander and Sudha")])
+    monkeypatch.setattr(routes_chat, "_title_chunks", lambda path, msg, explicit=False: [chunk(path, "Chander and Sudha")])
 
     def no_model(*a, **k):
         raise AssertionError("file size must not come from the model")

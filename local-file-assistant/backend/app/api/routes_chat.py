@@ -23,15 +23,17 @@ from app.config import settings
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+MAX_ATTACH = 3  # files per message: the 2B model reads a few passages, not a pile of documents
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 class ChatRequest(BaseModel):
     message: str
     conversation_id: int | None = None
-    mode: str = "auto"  # "auto" | "files" | "chat"
+    mode: str = "auto"  # "auto" | "files" | "files_only" | "chat"
     root: str | None = None
     workspace_id: int | None = None  # a new chat's workspace; an existing chat keeps its own
+    attach: list[str] = []  # files dropped on the chat: read for this answer only, never indexed
     model: str | None = None
     style: str | None = None  # one-question override of the saved answer style
     language: str | None = None  # same, for the reply language
@@ -175,13 +177,28 @@ _NOT_FOUND = re.compile(
 )
 
 
+FILES_ONLY_REFUSAL = ("I couldn't find this in your files, so I'm not answering it from general knowledge. "
+                      "Try other words, or pick AUTO for a general answer.")
+
+
+def files_only(answer: str, result: dict) -> tuple[str, dict]:
+    """FILES ONLY mode: an answer is kept only when at least one of its citations is verified against the files, or
+    when it already says the files don't have it. Anything else may come from the model's general knowledge (a small
+    model ignores "use only the excerpts" when it knows the answer), so it is replaced before it is shown.
+    ponytail: one verified citation keeps the whole answer; its uncited sentences are still marked by the UI."""
+    if says_not_found(answer) or any(c.get("verified") for c in result.get("citations", [])):
+        return answer, result
+    return FILES_ONLY_REFUSAL, {**result, "citations": [], "uncited": [], "all_verified": False}
+
+
 def says_not_found(answer: str) -> bool:
     """The answer says the files don't have it: a source next to that reads as evidence for a non-answer."""
     return bool(_NOT_FOUND.search(answer or "")) and len(answer) < 400
 
 
-def _title_chunks(path: str, message: str) -> list[dict]:
-    """Passages of one file found by its name: from the index when it is indexed, else read live (PC access)."""
+def _title_chunks(path: str, message: str, explicit: bool = False) -> list[dict]:
+    """Passages of one file found by its name: from the index when it is indexed, else read live (PC access).
+    explicit: a file the user dropped on this chat, readable even outside PC access (pc_access.can_read)."""
     from app.core.search.hybrid import snippet
 
     terms = [w for w in find_file.fuzzy.title_words(message)]
@@ -198,7 +215,7 @@ def _title_chunks(path: str, message: str) -> list[dict]:
             rows = [r for r in rows if int(r["loc_no"]) == target] or rows
         return [{"path": path, "name": Path(path).name, "loc_kind": r["loc_kind"], "loc_no": r["loc_no"], "chunk_no": i,
                  "text": r["text"], "snippet": snippet(r["text"], terms), "match": "name"} for i, r in enumerate(rows)]
-    got, _problem = file_agent.read_chunks(path, message, terms)
+    got, _problem = file_agent.read_chunks(path, message, terms, explicit=explicit)
     for c in got:
         c["match"] = "name"
     return got
@@ -488,7 +505,8 @@ def _stream(req: ChatRequest, conv: dict | None):
     ws = workspaces.get(req.workspace_id)
     within = tuple(ws["roots"]) if ws else ()  # [] = the whole PC: no limit
     chunks: list[dict] = []
-    kind = req.mode if req.mode in ("files", "chat") else "auto"
+    strict = req.mode == "files_only"  # held back and checked before it is shown (files_only)
+    kind = "files" if strict else req.mode if req.mode in ("files", "chat") else "auto"
     if kind == "auto" and organize_intent(req.message):
         kind = "chat"  # clean-up request: the role points to Tidy-up; a file search would only find noise
     # "this pdf", "recheck", "that's wrong": stay on the file the previous answer read. A fresh search on
@@ -496,13 +514,42 @@ def _stream(req: ChatRequest, conv: dict | None):
     if conv and kind != "chat" and not follow and not pinned and facts.refers_back(req.message):
         pinned = [p for p in facts.last_files(conv["messages"]) if Path(p).is_file()]
 
-    if pinned:
+    if req.attach:  # files dropped on the chat: read now, answered from with citations, never added to the index
+        kind = "files"
+        yield _sse("route", {"route": kind})
+        problems, locked = [], []
+        for path in list(dict.fromkeys(req.attach))[:MAX_ATTACH]:
+            yield _sse("pc_step", {"step": "name", "detail": f"Reading the file you added: {Path(path).name}"})
+            got, problem = file_agent.read_chunks(path, ask, find_file.fuzzy.title_words(ask), explicit=True)
+            if problem.startswith(file_agent.LOCKED):
+                locked.append(path)
+            elif problem:
+                problems.append(f"{Path(path).name}: {problem}")
+            for c in got:
+                c["match"] = "name"
+            chunks.extend(got)
+        if locked and not chunks:
+            text = _locked_reply(locked)
+            yield _sse("token", {"delta": text})
+            yield from _finish(req, conv, {"citations": [], "uncited": [], "all_verified": False, "answer": text,
+                                           "truncated": False, "route": kind, "locked": locked})
+            return
+        if not chunks:
+            text = "I couldn't read the file you added. " + " ".join(problems)
+            yield _sse("token", {"delta": text})
+            yield from _finish(req, conv, {"citations": [], "uncited": [], "all_verified": False, "answer": text,
+                                           "truncated": False, "route": kind})
+            return
+        pinned = list(dict.fromkeys(c["path"] for c in chunks))
+        yield _sse("results", {"results": [_public(c) for c in chunks], "semantic": False})
+    elif pinned:
         kind = "files"
         yield _sse("route", {"route": kind})
         yield _sse("pc_step", {"step": "name", "detail": f"Same file as before: {Path(pinned[0]).name}"})
+        dropped = {a for m in (conv["messages"] if conv else []) for a in (m.get("meta") or {}).get("attached", [])}
         for path in pinned:
             try:
-                chunks.extend(_title_chunks(path, ask))
+                chunks.extend(_title_chunks(path, ask, explicit=path in dropped))
             except Exception:
                 log.exception("reading the previous file failed")
         if chunks:
@@ -645,7 +692,8 @@ def _stream(req: ChatRequest, conv: dict | None):
         for what, value in _generate(deltas):
             if what == "token":
                 answer += value
-                yield _sse("token", {"delta": value})
+                if not strict:
+                    yield _sse("token", {"delta": value})
             else:
                 truncated = value
     except Exception as exc:
@@ -661,20 +709,26 @@ def _stream(req: ChatRequest, conv: dict | None):
             note = (f"\n\n\u26a0 I couldn't find {', '.join(missing[:3])} in the file{'s' if len({c['path'] for c in chunks}) > 1 else ''} "
                     f"I read, so don't rely on {'it' if len(missing) == 1 else 'them'}. Open the file to check.")
             answer += note
-            yield _sse("token", {"delta": note})
+            if not strict:
+                yield _sse("token", {"delta": note})
         if says_not_found(answer) and not result.get("all_verified"):
             result = {**result, "citations": [], "uncited": []}  # "I couldn't find it" needs no red "Not verified" source
             if who is not None:
                 hint = "\n\n" + _photo_hint()
                 answer += hint
-                yield _sse("token", {"delta": hint})
+                if not strict:
+                    yield _sse("token", {"delta": hint})
         elif who is not None and not who["name"]:
             people = next((c.get("people") for c in chunks if c.get("people")), None)
             if people:  # the user never said their name: say whose document this is, so a wrong one is noticed
                 note = (f"\n\n(This document is in the name of {people[0]}. If that isn't you, tell me your name, "
                         f"e.g. \u201cmy name is …\u201d, and I'll look for yours.)")
                 answer += note
-                yield _sse("token", {"delta": note})
+                if not strict:
+                    yield _sse("token", {"delta": note})
+        if strict:
+            answer, result = files_only(answer, result)
+            yield _sse("token", {"delta": answer})
     else:  # general answers are not checked against files
         result = {"citations": [], "uncited": [], "all_verified": False}
     yield from _finish(req, conv, {**result, "answer": answer, "truncated": truncated, "route": kind, "memory_used": used, "recall_used": seen,
@@ -696,7 +750,9 @@ def _attach_snippets(result: dict, chunks: list[dict]) -> None:
 
 def _finish(req: ChatRequest, conv: dict | None, done: dict):
     """Saves the exchange (only complete ones, so history never holds a dangling question)."""
-    meta = {k: done[k] for k in ("route", "citations", "uncited", "truncated", "no_results", "memory_used", "recall_used", "files", "locked") if k in done}
+    if req.attach:
+        done = {**done, "attached": req.attach}  # files dropped here stay readable for follow-ups ("recheck this pdf")
+    meta = {k: done[k] for k in ("route", "citations", "uncited", "truncated", "no_results", "memory_used", "recall_used", "files", "locked", "attached") if k in done}
     title = conv["title"] if conv else conversation.title_from(req.message)
     conv_id = conv["id"] if conv else conversation.create(title, workspace_id=req.workspace_id)["id"]
     _, answer_id = conversation.add_messages(conv_id, [("user", req.message, {}), ("assistant", done["answer"], meta)])

@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // The only bridge between the pages and Electron. Pages get the backend's port and token
 // from here and can ask for a folder picker; they can't reach Node or the filesystem.
@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('lfa', {
   config: () => ipcRenderer.invoke('app:config'),
   shortcut: () => ipcRenderer.invoke('app:shortcut'),
   pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
+  pickFiles: () => ipcRenderer.invoke('dialog:pick-files'), // the chat's paperclip
+  pathForFile: (file) => webUtils.getPathForFile(file), // a file dropped on the chat: its real path on disk ("" if none)
   // Updates (electron/updates.js): {enabled, supported, ready}, switch on/off, restart into a downloaded update.
   updates: () => ipcRenderer.invoke('updates:get'),
   setUpdates: (enabled) => ipcRenderer.invoke('updates:set', Boolean(enabled)),

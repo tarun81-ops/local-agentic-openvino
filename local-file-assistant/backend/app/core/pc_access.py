@@ -208,12 +208,14 @@ def _under(path: Path, roots: list[str]) -> bool:
     return False
 
 
-def can_read(path: Path | str) -> tuple[bool, str]:
+def can_read(path: Path | str, explicit: bool = False) -> tuple[bool, str]:
     """May the assistant read this file for an answer? (allowed, reason). Checked at read time, never
     trusting a path the model produced: it must be a real file inside an enabled drive, not behind a
-    link, and not credential-like or inside a skipped system folder."""
+    link, and not credential-like or inside a skipped system folder.
+    explicit: the user handed over this one file (dropped it on the chat), so PC access and its drives don't
+    matter; it must still be a real file, not a link, and never a credentials file."""
     cfg = config()
-    if not cfg["enabled"]:
+    if not cfg["enabled"] and not explicit:
         return False, "PC access is off."
     try:
         p = Path(path)
@@ -222,10 +224,12 @@ def can_read(path: Path | str) -> tuple[bool, str]:
         real = p.resolve()
     except OSError as exc:
         return False, f"Can't open it: {exc}"
-    if not _under(real, cfg["drives"]):
-        return False, "Outside the drives PC access covers."
     if is_sensitive(real):
         return False, "That looks like a credentials file, so it is never read."
+    if explicit:
+        return True, ""
+    if not _under(real, cfg["drives"]):
+        return False, "Outside the drives PC access covers."
     if _skipped_part(real, cfg["extra_excludes"], cfg["drives"]):
         return False, "That is in a system or excluded folder."
     return True, ""

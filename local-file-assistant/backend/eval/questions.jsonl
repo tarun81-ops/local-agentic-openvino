@@ -5,3 +5,4 @@
 {"q": "Which phase does the Everest budget cover?", "expect": [["phase one", "phase 1", "first phase"]], "file": "meeting_notes.docx"}
 {"q": "What is the CEO's salary?", "no_answer": true}
 {"q": "When does the Globex contract renew?", "no_answer": true}
+{"q": "What is the capital of France?", "no_answer": true, "mode": "files_only"}

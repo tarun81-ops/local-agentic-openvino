@@ -12,6 +12,7 @@ const LANGS = [['', 'Default'], ['english', 'English'], ['hinglish', 'Hinglish']
 const MODES = [
   ['auto', 'Auto', 'Files when they help, otherwise a general answer'],
   ['files', 'Files', 'Only answer from your indexed files, with citations'],
+  ['files_only', 'Files only', 'Answers only from your files; if they don’t have it, says so instead of a general answer'],
   ['chat', 'Chat', 'General answer, your files are not searched'],
 ];
 
@@ -21,6 +22,7 @@ const ICON = {
   stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" fill="currentColor"/></svg>',
   copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="8" width="12" height="12"/><path d="M16 8V4H4v12h4"/></svg>',
   retry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12a8 8 0 1 0 2.5-5.8"/><polyline points="4 3 4 8 9 8"/></svg>',
+  clip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L10.2 17.7a1.7 1.7 0 0 1-2.4-2.4L15.5 7.6"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
   model: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14"/><rect x="9" y="9" width="6" height="6" fill="currentColor"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>',
 };
@@ -125,6 +127,10 @@ export function render(container, { chatId, onChatsChanged, navigate, prefill, w
 
   const plusBtn = el('button', { type: 'button', class: 'ask-icon', 'aria-label': 'Options', title: 'Options' }, svg(ICON.plus, 14));
   const chips = el('div', { class: 'ask-tags' }); // active non-default picks, each removable
+  const attached = []; // files added for the next question: read live, not indexed
+  let storeText = false; // the text index is on (else "Keep in index" has nothing to keep into)
+  const files = el('div', { class: 'ask-tags ask-files' });
+  const clip = el('button', { type: 'button', class: 'ask-icon', 'aria-label': 'Add a file', title: 'Add a file (or drop it here)', onclick: async () => addFiles(await window.lfa.pickFiles()) }, svg(ICON.clip, 14));
   const suggest = el('div', { class: 'suggest', role: 'listbox', hidden: true }); // "/" and "@" menu
 
   const box = el(
@@ -132,11 +138,12 @@ export function render(container, { chatId, onChatsChanged, navigate, prefill, w
     { class: 'ask-box' },
     suggest,
     chips,
+    files,
     input,
     el(
       'div',
       { class: 'ask-bar' },
-      el('div', { class: 'ask-left' }, el('span', { class: 'pop-anchor' }, plusBtn)),
+      el('div', { class: 'ask-left' }, el('span', { class: 'pop-anchor' }, plusBtn), clip),
       el('div', { class: 'ask-right' }, mic.button, send),
     ),
   );
@@ -223,6 +230,26 @@ export function render(container, { chatId, onChatsChanged, navigate, prefill, w
   });
 
   api.roots().then((d) => { roots = d.roots; }).catch(() => {});
+  api.settings().then((s) => { storeText = Boolean(s.store_file_text); }).catch(() => {});
+
+  // ---------- files added to the next question (drop or paperclip) ----------
+  function addFiles(paths) {
+    for (const p of paths || []) if (p && !attached.includes(p) && attached.length < 3) attached.push(p);
+    drawFiles();
+  }
+  function drawFiles() {
+    files.replaceChildren(...attached.map((p, i) => el('span', { class: 'chip' }, `📎 ${fileName(p)}`,
+      el('button', { type: 'button', class: 'chip-x', 'aria-label': `Remove ${fileName(p)}`, onclick: () => { attached.splice(i, 1); drawFiles(); } }, '×'))));
+    send.disabled = !busy && !input.value.trim() && !attached.length;
+  }
+  container.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); container.classList.add('drop-on'); } });
+  container.addEventListener('dragleave', (e) => { if (e.target === container) container.classList.remove('drop-on'); });
+  container.addEventListener('drop', (e) => {
+    container.classList.remove('drop-on');
+    if (!e.dataTransfer?.files.length) return;
+    e.preventDefault();
+    addFiles([...e.dataTransfer.files].map((f) => window.lfa.pathForFile(f)));
+  });
   api.settings().then((s) => {
     models = s.server?.models || [];
     pick.model = s.model || '';
@@ -295,7 +322,7 @@ export function render(container, { chatId, onChatsChanged, navigate, prefill, w
   function grow() {
     input.style.height = 'auto';
     input.style.height = `${Math.min(input.scrollHeight, 220)}px`;
-    send.disabled = !busy && !input.value.trim();
+    send.disabled = !busy && !input.value.trim() && !attached.length;
   }
   input.addEventListener('input', () => {
     active = 0;
@@ -381,7 +408,7 @@ export function render(container, { chatId, onChatsChanged, navigate, prefill, w
   }
 
   async function submit(text) {
-    const message = (typeof text === 'string' ? text : input.value).trim();
+    const message = (typeof text === 'string' ? text : input.value).trim() || (attached.length ? 'What is in this file?' : '');
     if (busy) return busy.abort();
     if (!message) return;
     // "/find <words>" opens Find file with the words filled in; it answers without the chat model.
@@ -398,7 +425,9 @@ export function render(container, { chatId, onChatsChanged, navigate, prefill, w
     busy = new AbortController();
     const signal = busy.signal;
     setBusy(true);
-    const turn = await ask({ log, message, conversationId: convId, workspaceId, mode: pick.mode, root: pick.mode === 'chat' ? '' : pick.root, style: pick.style, language: pick.lang, signal, onScroll: () => (log.scrollTop = log.scrollHeight) });
+    const sentFiles = attached.splice(0); // these files go with this question only
+    drawFiles();
+    const turn = await ask({ log, message, conversationId: convId, workspaceId, attach: sentFiles, mode: pick.mode, root: pick.mode === 'chat' ? '' : pick.root, style: pick.style, language: pick.lang, signal, onScroll: () => (log.scrollTop = log.scrollHeight) });
     busy = null;
     setBusy(false);
     turns++;
@@ -406,7 +435,10 @@ export function render(container, { chatId, onChatsChanged, navigate, prefill, w
       turn.box.querySelector('.streaming')?.classList.remove('streaming');
       turn.box.querySelector('.matched-thinking')?.remove();
       turn.box.append(el('div', { class: 'route-tag' }, 'Stopped'));
-    } else answerTools(turn);
+    } else {
+      answerTools(turn);
+      if (sentFiles.length && storeText && !turn.error) turn.box.append(keepButton(sentFiles));
+    }
     if (readAloud.get() && turn.answer && !turn.error && !turn.noResults) speak(turn.answer).catch((e) => log.append(notice(e.message, 'error')));
     if (turn.conversation) {
       convId = turn.conversation.id;
@@ -447,4 +479,22 @@ export function render(container, { chatId, onChatsChanged, navigate, prefill, w
     stopSpeaking();
     document.removeEventListener('keydown', onKey);
   };
+}
+
+// "Keep in index" under an answer from dropped files: until clicked they were only read for that answer.
+function keepButton(paths) {
+  const status = el('span', { class: 'quiet', role: 'status' });
+  const btn = el('button', { type: 'button', class: 'btn btn-outline btn-sm' }, paths.length > 1 ? 'Keep these in the index' : 'Keep in index');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      for (const p of paths) await api.keepFile(p);
+      status.textContent = 'Kept: Find and Chat can search it now.';
+      btn.remove();
+    } catch (e) {
+      status.textContent = e.message;
+      btn.disabled = false;
+    }
+  });
+  return el('div', { class: 'row-gap keep-row' }, btn, status);
 }
