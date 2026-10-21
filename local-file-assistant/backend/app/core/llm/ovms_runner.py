@@ -73,6 +73,30 @@ def status() -> dict:
     return dict(_state)
 
 
+DEVICES = ("CPU", "GPU", "NPU")
+
+
+def available_devices() -> list[str]:
+    """What OVMS found on this PC, from the line it logs at every start ("Available devices for Open VINO: CPU, GPU,
+    NPU"). Before OVMS ever started there is no log: CPU and GPU are offered (NPU only once OVMS has seen one)."""
+    try:
+        text = (settings.data_dir / "logs" / "ovms.log").read_text(encoding="utf-8", errors="replace")
+        line = text[text.rindex("Available devices for Open VINO:"):].splitlines()[0]
+        found = [d.strip() for d in line.split(":", 1)[1].split(",")]
+        return [d for d in DEVICES if d in found] or ["CPU"]
+    except (OSError, ValueError, IndexError):
+        return ["CPU", "GPU"]
+
+
+def resolve_device(choice: str) -> str:
+    """The device a chat model is compiled for. "auto" is the app's choice, not OpenVINO's AUTO (OVMS 2026.4 can't load
+    an LLM on AUTO): the iGPU when there is one, else the CPU. Never the NPU: it needs an NPU-specific model export."""
+    choice = (choice or "auto").upper()
+    if choice in DEVICES:
+        return choice
+    return "GPU" if "GPU" in available_devices() else "CPU"
+
+
 def ensure_running(wait_s: float = 90) -> dict:
     """Starts OVMS if it isn't answering and can be started; waits up to wait_s for it. Never raises."""
     global _proc
@@ -137,3 +161,13 @@ def stop() -> None:
     except Exception:
         log.warning("could not stop OVMS", exc_info=True)
     _proc = None
+
+
+def restart() -> bool:
+    """Stops the OVMS this backend started and starts it again (in the background). False when OVMS wasn't started by
+    the app (the user runs it by hand): then it is left alone."""
+    if _proc is None or _proc.poll() is not None:
+        return False
+    stop()
+    ensure_running_async()
+    return True

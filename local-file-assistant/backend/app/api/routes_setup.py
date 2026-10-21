@@ -15,8 +15,9 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from app.config import settings
 from app.core import pc_access, prefs, ram
@@ -34,9 +35,23 @@ CHAT_MODELS = [
     {"repo": "OpenVINO/Qwen3-0.6B-int4-ov", "label": "Qwen3 0.6B (int4)", "size_mb": 460, "min_ram_mb": 0},
 ]
 EMBED_MODEL = {"repo": "OpenVINO/Qwen3-Embedding-0.6B-int8-ov", "label": "Qwen3 Embedding 0.6B (int8)", "size_mb": 645}
-# ponytail: chat on the iGPU like ovms-export.ps1's default; a PC without one shows "failed" with OVMS's reason. Phase 5's
-# device picker (Auto / NPU / iGPU / CPU) replaces this.
-CHAT_DEVICE = "GPU"
+# Bigger than the default: offered in Settings > Model for a PC with RAM to spare, never recommended (the app is tuned on
+# the default and a bigger model is slower on every question).
+EXTRA_CHAT_MODELS = [
+    {"repo": "OpenVINO/Qwen3-4B-int4-ov", "label": "Qwen3 4B (int4)", "size_mb": 2290, "min_ram_mb": 15000},
+]
+
+
+def chat_device() -> str:
+    """The device picked in Settings > Model (default Auto: the iGPU if there is one, else the CPU)."""
+    return ovms_runner.resolve_device(prefs.get("ov_device", "auto"))
+
+
+def chat_item(model: dict, name: str) -> dict:
+    """One download: model is a CHAT_MODELS / EXTRA_CHAT_MODELS entry, served under `name`."""
+    item = {"name": name, **model, "args": f"--task text_generation --target_device {chat_device()}"}
+    item["command"] = f"ovms --pull --source_model {item['repo']} --model_repository_path \"{models_dir()}\" {item['args']} --overwrite_models"
+    return item
 
 
 def recommended_chat(total_mb: int) -> dict:
@@ -81,7 +96,7 @@ def plan(total_mb: int) -> list[dict]:
     chat = recommended_chat(total_mb)
     out = []
     if settings.ov_chat_model not in have:
-        out.append({"name": settings.ov_chat_model, **chat, "args": f"--task text_generation --target_device {CHAT_DEVICE}"})
+        out.append({"name": settings.ov_chat_model, **chat, "args": f"--task text_generation --target_device {chat_device()}"})
     if settings.embedding_model not in have:
         # Qwen3-Embedding needs LAST pooling; OVMS's guess (CLS) gives no error but much worse search (docs/OPENVINO.md).
         out.append({"name": settings.embedding_model, **EMBED_MODEL, "args": "--task embeddings --pooling LAST --target_device CPU"})
@@ -189,11 +204,12 @@ def _run(items: list[dict]) -> None:
         _proc = None
 
 
-def start_pull() -> dict:
+def start_pull(items: list[dict] | None = None) -> dict:
+    """items: what to download; None = whatever setup still needs (plan())."""
     with _lock:
         if _job["status"] == "running":
             return dict(_job)
-        items = plan(ram.status()["total_mb"])
+        items = items if items is not None else plan(ram.status()["total_mb"])
         if not items:
             _job.clear()
             _job.update(status="done", percent=100, detail="The models are already downloaded.")
@@ -239,11 +255,21 @@ def get_status():
     }
 
 
+class PullRequest(BaseModel):
+    repo: str | None = None  # a catalog model (Settings > Model); none = what setup still needs
+
+
 @router.post("/model/pull")
-def pull():
+def pull(req: PullRequest | None = None):
     """Starts the download (or joins the running one) and streams `progress` events until it ends with
     `done`, `failed` or `cancelled`. Leaving the page doesn't stop it; POST /setup/model/pull/cancel does."""
-    first = start_pull()
+    items = None
+    if req and req.repo:
+        model = next((m for m in CHAT_MODELS + EXTRA_CHAT_MODELS if m["repo"] == req.repo), None)
+        if model is None:
+            raise HTTPException(400, "That model isn't in the list this app can download.")
+        items = [chat_item(model, req.repo.split("/")[-1])]  # served under its own name; "Use" switches to it
+    first = start_pull(items)
 
     def stream():
         state = first

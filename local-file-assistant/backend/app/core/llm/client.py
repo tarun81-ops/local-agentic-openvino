@@ -115,7 +115,13 @@ def parse_json_object(text: str) -> dict:
 
 
 def get_client() -> OpenAI:
-    """OpenVINO Model Server's OpenAI-compatible API (the model runs on the NPU, iGPU or CPU)."""
+    """OpenVINO Model Server's OpenAI-compatible API (the model runs on the NPU, iGPU or CPU), or the other
+    OpenAI-compatible server switched on in Settings > Model (core/llm/external.py)."""
+    from app.core.llm import external
+
+    ext = external.active()
+    if ext:  # plain OpenAI API: no OVMS-only request fields
+        return OpenAI(base_url=ext["url"], api_key="unused", timeout=httpx.Timeout(settings.llm_timeout_s, connect=5), max_retries=0)
     # No retries: a second attempt doubles the wait, and the caller reports the failure anyway.
     client = OpenAI(
         base_url=settings.ov_base_url,
@@ -130,7 +136,10 @@ def get_client() -> OpenAI:
 def current_model() -> str:
     """The model picked in Settings (saved in the data dir), else OV_CHAT_MODEL.
     (Saved under "ov_model": an old Ollama name saved as "model" must not be sent to OVMS.)"""
-    return prefs.get("ov_model") or settings.ov_chat_model
+    from app.core.llm import external
+
+    ext = external.active()
+    return ext["model"] if ext else prefs.get("ov_model") or settings.ov_chat_model
 
 
 def set_model(name: str) -> None:

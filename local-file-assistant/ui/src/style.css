@@ -914,3 +914,10 @@ body.overlay.overlay-compact .mark-overlay, body.overlay.overlay-compact .overla
 .chip-x { margin-left: 4px; border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
 .chat-docked.drop-on .composer-v2, .drop-on .ask-box { outline: 2px dashed var(--blue); outline-offset: 4px; }
 .keep-row { margin-top: 8px; }
+
+/* ---------- Settings > Model (components/models-panel.js) ---------- */
+.model-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.model-row { display: grid; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--line-soft); }
+.model-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.ext-server summary { cursor: pointer; font-weight: 500; }
+.ext-server .stack { margin-top: 8px; }

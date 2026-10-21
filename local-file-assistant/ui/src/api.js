@@ -61,8 +61,8 @@ export function chat({ message, conversationId, workspaceId, attach, mode, root,
 }
 
 /** POST /setup/model/pull: progress, then done / failed / cancelled. Aborting only stops listening; api.setupCancel() stops the download. */
-export function setupPull(handlers, signal) {
-  return stream('/setup/model/pull', {}, handlers, signal);
+export function setupPull(handlers, signal, body = {}) {
+  return stream('/setup/model/pull', body, handlers, signal); // body.repo: one model from Settings > Model
 }
 
 /** POSTs body and calls handlers[event](data) for each server-sent event; handlers.error on a network or HTTP error. */
@@ -115,6 +115,11 @@ export const api = {
   setupStatus: () => request('/setup/status'),
   setupDone: () => request('/setup/done', { method: 'POST' }),
   setupCancel: () => request('/setup/model/pull/cancel', { method: 'POST' }),
+  // Settings > Model (backend/app/api/routes_models.py); "Use" is setModel above.
+  models: () => request('/models'),
+  removeModel: (name) => request('/models/remove', { method: 'POST', body: { name } }),
+  setDevice: (device) => request('/models/device', { method: 'PUT', body: { device } }),
+  setExternal: (body) => request('/models/external', { method: 'PUT', body }),
   setModel: (model) => request('/settings/model', { method: 'PUT', body: { model } }),
   roots: () => request('/files/roots'),
   files: (root) => request('/files', { query: { root } }),

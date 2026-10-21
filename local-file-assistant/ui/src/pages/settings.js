@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { applyAppearance } from '../appearance.js';
 import { el, notice } from '../components/common.js';
+import { modelsPanel } from '../components/models-panel.js';
 
 function kv(label, ...value) {
   return el('div', { class: 'kv' }, el('div', { class: 'kv-k' }, label), el('div', { class: 'kv-v' }, ...value));
@@ -12,6 +13,7 @@ function sectionHead(n, title) {
 
 export function render(container, { onStatusChanged, navigate }) {
   const model = el('div', { class: 'box box-pad' }, el('div', { class: 'quiet' }, 'Loading…'));
+  const models = modelsPanel({ onChanged: () => { onStatusChanged?.(); load(); } }); // Settings > Model: pick, download, remove
   const flash = el('div');
   const toggle = el('input', { type: 'checkbox', id: 'launch-at-startup', class: 'toggle', role: 'switch' });
   const updates = el('input', { type: 'checkbox', id: 'check-updates', class: 'toggle', role: 'switch' });
@@ -33,7 +35,7 @@ export function render(container, { onStatusChanged, navigate }) {
       { class: 'page-body sections' },
       flash,
       el('section', {}, sectionHead('00', 'About me & answers'), meBox),
-      el('section', {}, sectionHead('01', 'Model & backend'), model,
+      el('section', {}, sectionHead('01', 'Model & backend'), el('div', { class: 'box box-pad' }, models.node), model,
         el('div', { class: 'row-gap' }, el('button', { type: 'button', class: 'btn btn-outline btn-sm', onclick: () => navigate?.('setup') }, 'Run setup again'))),
       el(
         'div',
@@ -375,25 +377,8 @@ export function render(container, { onStatusChanged, navigate }) {
   async function load() {
     try {
       const s = await api.settings();
-      const picker = el('select', { class: 'field field-mono', id: 'model-select', 'aria-label': 'Model' });
-      const models = s.server.models.includes(s.model) ? s.server.models : [s.model, ...s.server.models];
-      picker.append(...models.map((m) => el('option', { value: m, selected: m === s.model }, m)));
-      const save = el('button', { type: 'button', class: 'link-btn', disabled: true }, 'Change');
-      picker.addEventListener('change', () => (save.disabled = picker.value === s.model));
-      save.addEventListener('click', async () => {
-        try {
-          await api.setModel(picker.value);
-          flash.replaceChildren(notice(`Now answering with ${picker.value}.`));
-          onStatusChanged?.();
-          load();
-        } catch (e) {
-          flash.replaceChildren(notice(e.message, 'error'));
-        }
-      });
       model.replaceChildren(
         kv('Base URL', el('span', { class: 'mono' }, s.base_url)),
-        kv('Model', picker, save),
-        kv('Embedding model', el('span', { class: 'mono' }, s.embedding_model)),
         kv(
           'Connection',
           s.server.connected
@@ -419,4 +404,5 @@ export function render(container, { onStatusChanged, navigate }) {
     }
   }
   load();
+  return () => models.dispose(); // stop following a download when you leave the page (it keeps running)
 }
