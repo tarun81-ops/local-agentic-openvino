@@ -92,14 +92,15 @@ def hybrid_search(q: str, root: str | None = None, limit: int = 6, within: list[
     rerank_on = reranker.available()
     # A wider pool lets a habitually opened file rise into view even when the re-ranker is off.
     pool = max(limit, RERANK_POOL) if (rerank_on or settings.open_prior_max_shift > 0) else limit
-    # within: a workspace's folders. ponytail: filtered after search from a 4x pool; a SQL path-prefix filter if
-    # a workspace's folders hold a small share of a very large index and its hits fall outside the pool.
+    # within: a workspace's folders. Keyword search filters them in SQL (a small workspace in a big index would
+    # otherwise get no hits and FILES ONLY would refuse). ponytail: the vector side is still filtered after the search
+    # from a 4x pool; a path prefix filter in LanceDB if semantic hits of a small workspace go missing.
     if within:
         pool *= 4
     conn = sqlite_fts.connect(settings.db_path)
     try:
         skip = _hidden_roots_when_off(conn)
-        fts_results = fts_search.search(conn, q, limit=pool + 2, root=root, skip_roots=skip or None)
+        fts_results = fts_search.search(conn, q, limit=pool + 2, root=root, skip_roots=skip or None, within=within)
         stale = sqlite_fts.vectors_stale(conn)  # schema upgrade pending a rebuild
     finally:
         conn.close()

@@ -2,8 +2,9 @@
 
 A small stdlib client: the server is a local program started with pipes; messages are newline-delimited JSON-RPC
 (initialize, tools/list, tools/call). Each server tool is registered in the tool registry as "mcp.<server>.<tool>":
-- read-only by default; "write" (an approval card with the exact arguments, nothing runs before APPROVE) when the user
-  marks it, or when the server itself declares it is not read-only / destructive;
+- read-only, except "write" (an approval card with the exact arguments, nothing runs before APPROVE) when the user
+  marks it, when the server itself declares it is not read-only / destructive, or when the server says nothing and the
+  tool's name is a verb that changes things (delete_note, sendEmail, run...): the user can mark those read-only;
 - planned only from the user's own message, once, before any tool runs, at most MAX_STEPS calls (plan());
 - its result is untrusted data: it only goes into the answer prompt as quoted text and is never planned on, so text
   inside a result cannot trigger another call."""
@@ -96,13 +97,15 @@ class Client:
 
 _clients: dict[str, Client] = {}
 _state: dict[str, dict] = {}  # server name -> {"tools": [...], "error": str}
-_mutex = threading.Lock()
+_mutex = threading.Lock()  # _clients, _state and the registry's mcp.* entries; held briefly, never while waiting on a server
+_refresh_lock = threading.Lock()  # one refresh at a time; only Settings changes wait on it, never chat
+_started = False  # the enabled servers were started (or are being) since the app began
 
 
 # ---------- configuration (settings.json) ----------
 
 def servers() -> list[dict]:
-    return [{"enabled": True, "args": [], "writes": [], **s} for s in (prefs.get(_PREF) or [])]
+    return [{"enabled": True, "args": [], "writes": [], "reads": [], **s} for s in (prefs.get(_PREF) or [])]
 
 
 def _save(items: list[dict]) -> None:
@@ -118,13 +121,15 @@ def add_server(name: str, command: str, args: list[str]) -> dict:
     exe = (command or "").strip()
     if not (Path(exe).is_file() or shutil.which(exe)):
         raise ValueError(f"{exe or 'The command'} wasn't found on this PC. Give the full path to the program.")
-    item = {"name": name, "command": exe, "args": [str(a) for a in args or []][:20], "enabled": True, "writes": []}
+    item = {"name": name, "command": exe, "args": [str(a) for a in args or []][:20], "enabled": True, "writes": [], "reads": []}
     _save(servers() + [item])
     refresh()
     return item
 
 
-def update_server(name: str, enabled: bool | None = None, writes: list[str] | None = None) -> None:
+def update_server(name: str, enabled: bool | None = None, writes: list[str] | None = None, reads: list[str] | None = None) -> None:
+    """writes: tools the user wants to be asked about; reads: tools the user says are safe to run at once (these win
+    over a guess from the tool's name, never over what the server itself declares)."""
     items = servers()
     found = next((s for s in items if s["name"] == name), None)
     if found is None:
@@ -133,6 +138,9 @@ def update_server(name: str, enabled: bool | None = None, writes: list[str] | No
         found["enabled"] = bool(enabled)
     if writes is not None:
         found["writes"] = sorted({str(w) for w in writes})
+    if reads is not None:
+        found["reads"] = sorted({str(r) for r in reads})
+    found["reads"] = sorted(set(found["reads"]) - set(found["writes"]))  # asking wins when both are set
     _save(items)
     refresh()
 
@@ -145,10 +153,38 @@ def remove_server(name: str) -> None:
 # ---------- running servers and registering their tools ----------
 
 def _declares_write(tool: dict) -> bool:
-    """The server itself says the tool changes things: readOnlyHint false or destructiveHint true, stated explicitly.
-    Unannotated tools count as read-only (the user marks them otherwise in Settings)."""
+    """The server itself says the tool changes things: readOnlyHint false or destructiveHint true, stated explicitly."""
     a = tool.get("annotations") or {}
     return a.get("readOnlyHint") is False or a.get("destructiveHint") is True
+
+
+# ponytail: a word list on the tool's name, no model involved; add words as real servers show what it misses.
+_CHANGES = frozenset("delete remove send write update create run exec execute drop kill move rename edit insert upload "
+                     "publish push install reset clear post put patch save add set append modify commit email".split())
+
+
+def _sounds_like_change(name: str) -> bool:
+    """delete_note, sendEmail, run-command: a word in the name that is a verb for changing things (not "address", "asset")."""
+    words = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name).lower()
+    return bool(_CHANGES & set(re.findall(r"[a-z]+", words)))
+
+
+def _is_write(server: dict, tool: dict) -> bool:
+    """Asks before running when the user marked it or the server says it changes things. A tool the server says nothing
+    about is judged by its name (an unannotated delete_note must not run on arguments a 2B model wrote) unless the user
+    marked it read-only; a tool the server declares readOnlyHint: true is read-only."""
+    name = tool["name"]
+    if name in server["writes"] or _declares_write(tool):
+        return True
+    if name in server["reads"] or (tool.get("annotations") or {}).get("readOnlyHint") is True:
+        return False
+    return _sounds_like_change(name)
+
+
+def _shown(value) -> str:
+    """An argument as the approval card shows it: everything up to 300 characters, then how much more will be sent."""
+    text = json.dumps(value, ensure_ascii=False)
+    return text if len(text) <= 300 else f"{text[:300]}… ({len(text) - 300} more characters are sent)"
 
 
 def tool_name(server: str, tool: str) -> str:
@@ -181,7 +217,7 @@ def _register(server: str, tool: dict, write: bool) -> None:
 
     def describe(args: dict) -> list[str]:
         lines = [f"Runs the tool {tname} of the plug-in server “{server}” with:"]
-        lines += [f"{k}: {json.dumps(v, ensure_ascii=False)[:300]}" for k, v in args.items()] or ["(no arguments)"]
+        lines += [f"{k}: {_shown(v)}" for k, v in args.items()] or ["(no arguments)"]
         return lines + (["This tool can change things or send data."] if write else [])
 
     registry.register(registry.Tool(
@@ -191,48 +227,77 @@ def _register(server: str, tool: dict, write: bool) -> None:
 
 
 def refresh() -> dict[str, dict]:
-    """Starts the enabled servers (once), lists their tools and re-registers them; stops disabled or removed ones."""
-    with _mutex:
-        for name in list(registry.REGISTRY):
-            if name.startswith("mcp."):
-                registry.REGISTRY.pop(name)
+    """Starts the enabled servers that aren't running, lists their tools and re-registers them; stops disabled or
+    removed ones. A server that hangs takes up to 2 x TIMEOUT_S to give up, so _mutex (which chat reads the registry
+    under) is only held for the quick bookkeeping, never while waiting on a server."""
+    global _started
+    with _refresh_lock:
+        _started = True
         wanted = {s["name"]: s for s in servers() if s["enabled"]}
-        for name in list(_clients):
-            if name not in wanted:
+        with _mutex:
+            for name in [n for n in _clients if n not in wanted]:
                 _clients.pop(name).close()
-                _state.pop(name, None)
+            for name in [n for n in _state if n not in wanted]:
+                _state.pop(name)
         for name, s in wanted.items():
+            if name in _clients and _clients[name].proc.poll() is None:
+                continue
+            client = None
             try:
-                if name not in _clients or _clients[name].proc.poll() is not None:
-                    _clients[name] = Client([s["command"], *s["args"]])
-                    _state[name] = {"tools": _clients[name].start(), "error": ""}
-                for t in _state[name]["tools"]:
-                    _register(name, t, t["name"] in s["writes"] or _declares_write(t))
+                client = Client([s["command"], *s["args"]])
+                state = {"tools": client.start(), "error": ""}
             except Exception as exc:
                 log.warning("MCP server %s failed: %s", name, exc)
-                if name in _clients:
-                    _clients.pop(name).close()
-                _state[name] = {"tools": [], "error": f"It didn't start: {exc}"}
-        return {k: dict(v) for k, v in _state.items()}
+                if client:
+                    client.close()
+                client, state = None, {"tools": [], "error": f"It didn't start: {exc}"}
+            with _mutex:
+                _clients.pop(name, None)  # a stopped one
+                if client:
+                    _clients[name] = client
+                _state[name] = state
+        with _mutex:
+            for name in [n for n in registry.REGISTRY if n.startswith("mcp.")]:
+                registry.REGISTRY.pop(name)
+            for name, s in wanted.items():
+                for t in _state.get(name, {}).get("tools", []):
+                    _register(name, t, _is_write(s, t))
+            return {k: dict(v) for k, v in _state.items()}
+
+
+def start_background() -> None:
+    """Starts the enabled servers in a thread, once per app run (later changes go through refresh() from Settings).
+    Chat, GET /mcp and app start call this and never wait: a broken server needs up to 2 x TIMEOUT_S to give up."""
+    global _started
+    with _mutex:
+        if _started or not servers():
+            return
+        _started = True
+    threading.Thread(target=refresh, daemon=True, name="mcp-start").start()
 
 
 def status() -> list[dict]:
-    st = refresh()
+    """What is known now. Never starts a server or waits for one; "starting" = on, but no answer from it yet."""
+    start_background()
+    with _mutex:
+        st = {k: dict(v) for k, v in _state.items()}
     out = []
     for s in servers():
-        info = st.get(s["name"], {"tools": [], "error": ""})
-        out.append({**s, "error": info["error"], "tools": [
+        info = st.get(s["name"])
+        out.append({**s, "starting": s["enabled"] and info is None, "error": info["error"] if info else "", "tools": [
             {"name": t["name"], "description": (t.get("description") or "")[:300],
-             "write": t["name"] in s["writes"] or _declares_write(t), "server_says_write": _declares_write(t)}
-            for t in info["tools"]]})
+             "write": _is_write(s, t), "server_says_write": _declares_write(t)}
+            for t in (info["tools"] if info else [])]})
     return out
 
 
 def stop_all() -> None:
+    global _started
     with _mutex:
         for c in _clients.values():
             c.close()
         _clients.clear()
+        _started = False
 
 
 # ---------- planning: from the user's own message only ----------
@@ -252,9 +317,9 @@ def plan(message: str) -> list[dict]:
     """Up to MAX_STEPS {"tool", "args"} for this message. The planner sees only the user's message and the tool list,
     never a tool result or file text, so nothing a tool returns can ask for another call. A message that shares no
     word with any tool skips the model call entirely (chat stays as fast as before)."""
-    if servers() and not _state:
-        refresh()  # first question since the app started: start the plug-in servers now
-    tools = {n: t for n, t in registry.REGISTRY.items() if n.startswith("mcp.")}
+    start_background()  # first question since the app started: servers still starting offer no tools yet; chat doesn't wait
+    with _mutex:
+        tools = {n: t for n, t in registry.REGISTRY.items() if n.startswith("mcp.")}
     if not tools:
         return []
     words = set(_WORD.findall(message.lower()))

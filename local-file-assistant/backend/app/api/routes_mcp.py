@@ -17,6 +17,7 @@ class NewServer(BaseModel):
 class ServerPatch(BaseModel):
     enabled: bool | None = None
     writes: list[str] | None = None  # tool names that change things or send data: they ask first
+    reads: list[str] | None = None  # tool names the user says are safe: no asking, though a name like delete_note would
 
 
 @router.get("")
@@ -36,7 +37,7 @@ def add(body: NewServer):
 @router.patch("/servers/{name}")
 def patch(name: str, body: ServerPatch):
     try:
-        mcp.update_server(name, body.enabled, body.writes)
+        mcp.update_server(name, body.enabled, body.writes, body.reads)
     except KeyError:
         raise HTTPException(404, "No such plug-in server.")
     return {"servers": mcp.status()}

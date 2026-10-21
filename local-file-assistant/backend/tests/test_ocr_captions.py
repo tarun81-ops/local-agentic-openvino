@@ -75,7 +75,7 @@ def test_caption_sends_the_image_to_the_model(tmp_path, monkeypatch):
 
     import app.core.llm.client as client
 
-    monkeypatch.setattr(client, "get_client", lambda: FakeClient)
+    monkeypatch.setattr(client, "get_client", lambda local: FakeClient)  # captions must ask for the local client
     assert image_parser.caption(img) == "A cat."
     url = sent["messages"][0]["content"][1]["image_url"]["url"]
     assert url.startswith("data:image/jpeg;base64,")

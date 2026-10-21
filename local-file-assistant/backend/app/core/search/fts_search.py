@@ -1,5 +1,7 @@
+import os
 import re
 import sqlite3
+from pathlib import Path
 
 # Question words and glue. Requiring them to appear (the old behaviour: every word ANDed)
 # made natural questions like "What is the invoice total for Acme Corp?" match nothing.
@@ -29,7 +31,20 @@ def build_match(query: str) -> str | None:
     return " OR ".join('"' + t.replace('"', '""') + '"' for t in ts)
 
 
-def search(conn: sqlite3.Connection, query: str, limit: int = 8, root: str | None = None, skip_roots: list[str] | None = None) -> list[dict]:
+# The stored path folded the way pc_access.under compares paths (case-insensitive, one slash style) on Windows.
+_PATH = "replace(lower(c.path), '/', '\\')" if os.name == "nt" else "c.path"
+
+
+def _inside(root: str) -> str:
+    """LIKE pattern (escape ^) for the files inside a folder. Prefix only: callers still check with pc_access.under."""
+    base = os.path.normcase(str(Path(root))).rstrip("\\/") + os.sep
+    return base.replace("^", "^^").replace("%", "^%").replace("_", "^_") + "%"
+
+
+def search(conn: sqlite3.Connection, query: str, limit: int = 8, root: str | None = None, skip_roots: list[str] | None = None,
+           within: list[str] | None = None) -> list[dict]:
+    """within: a workspace's folders. Filtered here, before the top `limit` are taken, so a workspace holding a small
+    share of the index still gets its own hits (filtering the top hits afterwards could leave none)."""
     match = build_match(query)
     if match is None:
         return []
@@ -38,14 +53,18 @@ def search(conn: sqlite3.Connection, query: str, limit: int = 8, root: str | Non
         "FROM chunks c "
     )
     args: list = [match]
+    if root or skip_roots:
+        sql += "JOIN files f ON f.path = c.path "
+    sql += "WHERE chunks MATCH ? "
     if root:
-        sql += "JOIN files f ON f.path = c.path WHERE chunks MATCH ? AND f.root = ? "
+        sql += "AND f.root = ? "
         args.append(root)
     elif skip_roots:  # e.g. whole-PC contents while PC access is off: excluded here so they can't crowd out real hits
-        sql += f"JOIN files f ON f.path = c.path WHERE chunks MATCH ? AND f.root NOT IN ({','.join('?' * len(skip_roots))}) "
+        sql += f"AND f.root NOT IN ({','.join('?' * len(skip_roots))}) "
         args += skip_roots
-    else:
-        sql += "WHERE chunks MATCH ? "
+    if within:
+        sql += "AND (" + " OR ".join(f"{_PATH} LIKE ? ESCAPE '^'" for _ in within) + ") "
+        args += [_inside(r) for r in within]
     sql += "ORDER BY score LIMIT ?"
     args.append(limit)
     rows = conn.execute(sql, args).fetchall()

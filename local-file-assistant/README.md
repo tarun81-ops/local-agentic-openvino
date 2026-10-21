@@ -29,15 +29,16 @@ own). Turn that off in Settings > General > Privacy.
 
 ## What you can do
 
-- **Chat** with your files (AUTO), only with your files (FILES ONLY: if they don't have it, it says so instead of
-  answering from general knowledge), or without them (CHAT).
+- **Chat** with your files (AUTO), checked against your files (FILES ONLY: an answer no file backs is replaced by
+  "I couldn't find this in your files". It is a check, not a guarantee: one backed claim keeps the whole answer, so
+  open the source), or without them (CHAT).
 - **Drop a file into the chat** (or use the paperclip) to ask about it. It is read for that answer only.
 - **Workspaces**: a name, some folders and an answer style. Chat in a workspace only answers from its folders.
 - **Settings > Model**: download, use or remove models, pick the device (Auto / CPU / iGPU / NPU), or point chat at
-  another OpenAI-compatible server such as LM Studio (off by default; a server on another computer needs a second
-  confirmation).
-- **Settings > Plug-in tools**: add local MCP servers. Their tools are read-only unless you mark them; a tool that
-  changes things always shows an approval card first.
+  another OpenAI-compatible server such as LM Studio (off by default; only chat goes there, never image captions or
+  the briefing; a server on another computer needs an https:// address and a second confirmation).
+- **Settings > Plug-in tools**: add local MCP servers. A tool that changes things (the server says so, you mark it,
+  or its name is a verb like delete or send) shows an approval card first; you can mark one read-only.
 - **Find file**, **Organize** (tidy folders with a plan you approve; undo from History), the **Ctrl+Shift+Space** overlay.
 
 ![Settings > Model](docs/screenshots/models.png)

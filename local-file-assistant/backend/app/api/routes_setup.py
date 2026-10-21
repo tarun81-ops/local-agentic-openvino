@@ -80,14 +80,24 @@ def installed() -> dict[str, str]:
     return out
 
 
+def _edit_config(edit) -> None:
+    """Read-modify-write of config.json: one writer at a time (a download finishing while a model is removed must not
+    lose either change), swapped in whole so OVMS never reads half a file."""
+    with ovms_runner.config_lock:
+        cfg = _config()
+        edit(cfg)
+        path = ovms_runner.config_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        ovms_runner.write_atomic(path, json.dumps(cfg, indent=4))
+
+
 def _add_to_config(name: str, base_path: str) -> None:
     """Adds or replaces one model in config.json; OVMS notices the change and loads it (no restart)."""
-    cfg = _config()
-    rest = [e for e in cfg.get("model_config_list", []) if e.get("config", {}).get("name") != name]
-    cfg["model_config_list"] = rest + [{"config": {"name": name, "base_path": base_path}}]
-    path = ovms_runner.config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(cfg, indent=4), encoding="utf-8")
+    def add(cfg: dict) -> None:
+        rest = [e for e in cfg.get("model_config_list", []) if e.get("config", {}).get("name") != name]
+        cfg["model_config_list"] = rest + [{"config": {"name": name, "base_path": base_path}}]
+
+    _edit_config(add)
 
 
 def plan(total_mb: int) -> list[dict]:

@@ -59,7 +59,7 @@ def _ask(env, message):
 def test_the_servers_tools_are_listed_with_their_kind(env):
     [server] = env["client"].get("/mcp", headers=AUTH).json()["servers"]
     tools = {t["name"]: t for t in server["tools"]}
-    assert set(tools) == {"count_words", "save_note", "send_email", "read_inbox"} and server["error"] == ""
+    assert set(tools) == {"count_words", "save_note", "send_email", "read_inbox", "delete_note"} and server["error"] == ""
     assert not tools["count_words"]["write"] and tools["send_email"]["write"] and tools["send_email"]["server_says_write"]
     assert registry.get("mcp.fake.count_words").risk == "read" and registry.get("mcp.fake.send_email").risk == "external"
 
@@ -86,6 +86,55 @@ def test_a_tool_the_user_marks_as_changing_things_asks_first(env):
     env["planner"]["calls"] = [{"tool": "mcp.fake.save_note", "args": {"note": "buy milk"}}]
     ev = _ask(env, "save a note: buy milk")
     assert any(k == "tool_proposal" for k, _ in ev) and _ran(env) == []
+
+
+def test_an_unannotated_tool_named_like_a_change_asks_until_the_user_marks_it_read_only(env):
+    [server] = env["client"].get("/mcp", headers=AUTH).json()["servers"]
+    tool = next(t for t in server["tools"] if t["name"] == "delete_note")
+    assert tool["write"] and not tool["server_says_write"]  # the server said nothing; the name did
+    env["planner"]["calls"] = [{"tool": "mcp.fake.delete_note", "args": {"note": "everything"}}]
+    ev = _ask(env, "delete the note called everything")
+    assert any(k == "tool_proposal" for k, _ in ev) and _ran(env) == []
+    env["client"].patch("/mcp/servers/fake", json={"reads": ["delete_note"]}, headers=AUTH)
+    assert registry.get("mcp.fake.delete_note").risk == "read"
+    env["client"].patch("/mcp/servers/fake", json={"writes": ["delete_note"]}, headers=AUTH)  # asking wins over reading
+    assert registry.get("mcp.fake.delete_note").risk == "external"
+
+
+def test_names_are_read_by_word_not_by_substring():
+    assert mcp._sounds_like_change("delete_note") and mcp._sounds_like_change("sendEmail") and mcp._sounds_like_change("run-command")
+    assert not any(mcp._sounds_like_change(n) for n in ("get_address", "read_asset", "list_settings", "count_words", "search"))
+
+
+def test_the_approval_card_says_when_it_cuts_a_long_value(env):
+    lines = registry.get("mcp.fake.send_email").describe({"to": "me@example.com", "body": "x" * 500})
+    body = next(line for line in lines if line.startswith("body:"))
+    assert "more characters are sent" in body and "202 more" in body  # 500 x's and two quotes, 300 shown
+    assert not any("more characters" in line for line in registry.get("mcp.fake.send_email").describe({"to": "a", "body": "short"}))
+
+
+def test_a_server_that_never_answers_holds_up_neither_chat_nor_the_settings_page(env, tmp_path, monkeypatch):
+    import time
+
+    from app.core import prefs
+
+    hang = tmp_path / "hang.py"
+    hang.write_text("import time\ntime.sleep(3)\n", encoding="utf-8")  # reads nothing, answers nothing, exits after 3 s
+    prefs.set("mcp_servers", [*prefs.get("mcp_servers"), {"name": "hang", "command": sys.executable, "args": [str(hang)]}])
+    monkeypatch.setattr(mcp, "_started", False)  # as on the first question after the app starts
+    env["planner"]["calls"] = [{"tool": "mcp.fake.count_words", "args": {"text": "a b"}}]
+    t = time.monotonic()
+    servers = {s["name"]: s for s in mcp.status()}  # what GET /mcp returns
+    calls = mcp.plan("count the words in: a b")  # what the first chat message runs
+    assert time.monotonic() - t < 1.5, "waited for the broken server"
+    assert servers["hang"]["starting"] and calls  # still starting; the working server's tools are there meanwhile
+    for _ in range(100):  # then it gives up and says why
+        failed = next(s for s in mcp.status() if s["name"] == "hang")
+        if failed["error"]:
+            break
+        time.sleep(0.1)
+    assert "didn't start" in failed["error"] and not failed["starting"]
+    mcp.remove_server("hang")
 
 
 def test_injection_in_a_tool_result_cannot_trigger_another_call(env):

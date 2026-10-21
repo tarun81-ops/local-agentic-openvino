@@ -55,8 +55,8 @@ def caption(path: Path) -> str:
         return ""
     url = f"data:{_MIME.get(path.suffix.lower(), 'image/png')};base64,{base64.b64encode(data).decode()}"
     idle.touch()
-    response = get_client().chat.completions.create(
-        model=current_model(),
+    response = get_client(local=True).chat.completions.create(  # the image bytes never go to the other server
+        model=current_model(local=True),
         messages=[{"role": "user", "content": [{"type": "text", "text": CAPTION_PROMPT}, {"type": "image_url", "image_url": {"url": url}}]}],
         max_tokens=80,
     )

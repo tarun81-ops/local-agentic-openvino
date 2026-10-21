@@ -2,7 +2,6 @@
 download, removing one, the device the chat model runs on, and the optional other OpenAI-compatible server.
 Downloads reuse setup's job (POST /setup/model/pull {"repo"}); switching reuses PUT /settings/model. The app never
 switches models by itself: a downloaded model is only used after "Use"."""
-import json
 import re
 import shutil
 from pathlib import Path
@@ -13,7 +12,7 @@ from pydantic import BaseModel
 from app.config import settings
 from app.core import prefs, ram
 from app.core.llm import external, ovms_runner
-from app.core.llm.client import current_model
+from app.core.llm.client import current_model, server_status
 from app.api import routes_setup
 
 router = APIRouter(prefix="/models", tags=["models"])
@@ -65,9 +64,10 @@ def remove_model(req: NameRequest):
         raise HTTPException(404, "That model isn't downloaded.")
     if req.name == current_model() or req.name == settings.embedding_model:
         raise HTTPException(400, "This model is in use. Switch to another model first (Use), then remove it.")
-    cfg = routes_setup._config()
-    cfg["model_config_list"] = [e for e in cfg.get("model_config_list", []) if e.get("config", {}).get("name") != req.name]
-    ovms_runner.config_path().write_text(json.dumps(cfg, indent=4), encoding="utf-8")
+    def drop(cfg: dict) -> None:
+        cfg["model_config_list"] = [e for e in cfg.get("model_config_list", []) if e.get("config", {}).get("name") != req.name]
+
+    routes_setup._edit_config(drop)
     folder = (routes_setup.models_dir() / have[req.name]).resolve()
     if routes_setup.models_dir().resolve() in folder.parents and not any(have[n] == have[req.name] for n in have if n != req.name):
         shutil.rmtree(folder, ignore_errors=True)  # the app downloaded it; still used under another name = kept
@@ -93,13 +93,21 @@ def set_device(req: DeviceRequest):
     if base is None:
         raise HTTPException(400, "The chat model isn't downloaded yet. Finish setup first.")
     graph = routes_setup.models_dir() / base / "graph.pbtxt"
-    try:
-        text = graph.read_text(encoding="utf-8")
-    except OSError:
-        raise HTTPException(400, "This model has no graph.pbtxt to change; download it again from this page.")
-    graph.write_text(_DEVICE_LINE.sub(rf"\g<1>{device}\g<2>", text), encoding="utf-8")
+    with ovms_runner.config_lock:
+        try:
+            text = graph.read_text(encoding="utf-8")
+        except OSError:
+            raise HTTPException(400, "This model has no graph.pbtxt to change; download it again from this page.")
+        new, found = _DEVICE_LINE.subn(rf"\g<1>{device}\g<2>", text)
+        if not found:  # a graph in another layout: saying "now runs on GPU" after changing nothing would be a lie
+            raise HTTPException(400, "This model's graph.pbtxt has no device line the app can change; download the model again from this page.")
+        ovms_runner.write_atomic(graph, new)
+        restarted = ovms_runner.restart(wait=True)
+        if restarted and current_model() not in server_status()["models"]:  # the new device didn't load it: the old file goes back
+            ovms_runner.write_atomic(graph, text)
+            ovms_runner.restart(wait=True)
+            raise HTTPException(500, f"The chat model didn't start on {device}, so it is back on the device it had before. See logs\\ovms.log.")
     prefs.set("ov_device", choice.lower() if choice == "auto" else device)
-    restarted = ovms_runner.restart()
     note = "" if restarted else " Restart OpenVINO Model Server to apply it (it was started outside the app)."
     warn = " NPU needs a model exported for it; if the chat stops working, switch back to Auto." if device == "NPU" else ""
     return {"device": device, "restarted": restarted, "detail": f"The chat model now runs on {device}.{note}{warn}"}

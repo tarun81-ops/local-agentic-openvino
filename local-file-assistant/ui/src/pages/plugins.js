@@ -1,9 +1,10 @@
 import { api } from '../api.js';
 import { badge, el, notice } from '../components/common.js';
 
-// Settings > Plug-in tools: local MCP servers (programs on this PC) whose tools the assistant may use. Each tool is
-// read-only unless marked "Asks before running"; those (and any the server itself says change things) show an
-// approval card with the exact arguments and run only on APPROVE. What a tool returns is treated as data.
+// Settings > Plug-in tools: local MCP servers (programs on this PC) whose tools the assistant may use. A tool marked
+// "Asks before running" (by you, by the server, or by a name like delete_note or send_email when the server says
+// nothing) shows an approval card with the exact arguments and runs only on APPROVE; untick it to run at once.
+// What a tool returns is treated as data.
 export function render(container) {
   const flash = el('div');
   const list = el('div', { class: 'stack' }, el('div', { class: 'quiet' }, 'Loading…'));
@@ -50,8 +51,10 @@ export function render(container) {
       ask.checked = t.write;
       ask.disabled = t.server_says_write; // the server says it changes things: always asks
       ask.addEventListener('change', () => {
-        const writes = s.tools.filter((x) => (x.name === t.name ? ask.checked : x.write && !x.server_says_write)).map((x) => x.name);
-        run(() => api.patchMcpServer(s.name, { writes }), '');
+        // every tool the user can see gets an explicit answer, so a name-based guess never overrides what they chose
+        const asks = (x) => (x.name === t.name ? ask.checked : x.write);
+        const own = s.tools.filter((x) => !x.server_says_write);
+        run(() => api.patchMcpServer(s.name, { writes: own.filter(asks).map((x) => x.name), reads: own.filter((x) => !asks(x)).map((x) => x.name) }), '');
       });
       return el('li', { class: 'mcp-tool' },
         el('div', { class: 'row-gap' }, el('span', { class: 'mono' }, t.name), t.write ? badge('ASKS FIRST', 'red-outline') : badge('READ-ONLY', 'outline')),
@@ -65,18 +68,21 @@ export function render(container) {
           if (confirm(`Remove the plug-in server ${s.name}? Its tools stop being used. The program itself is not deleted.`)) run(() => api.removeMcpServer(s.name), `${s.name} removed.`);
         } }, 'Remove')),
       s.error ? notice(`${s.error} Check the program and its arguments, then switch it off and on again.`, 'error') : '',
-      s.enabled && !s.error && !tools.length ? el('div', { class: 'quiet' }, 'This server offers no tools.') : '',
+      s.starting ? el('div', { class: 'quiet' }, 'Starting…') : '',
+      s.enabled && !s.starting && !s.error && !tools.length ? el('div', { class: 'quiet' }, 'This server offers no tools.') : '',
       tools.length ? el('ul', { class: 'mcp-tools' }, ...tools) : '');
   }
 
   function draw(servers) {
     list.replaceChildren(...(servers.length ? servers.map(server) : [el('div', { class: 'quiet' }, 'No plug-in servers yet.')]));
+    // the backend starts servers in the background (a broken one can take a minute to give up): look again until they answer
+    if (servers.some((s) => s.starting)) setTimeout(() => container.isConnected && api.mcpServers().then((r) => draw(r.servers)).catch(() => {}), 2000);
   }
 
   add.addEventListener('click', async () => {
     const added = name.value.trim();
     const ok = await run(() => api.addMcpServer({ name: added, command: command.value, args: args.value.split('\n').map((a) => a.trim()).filter(Boolean) }),
-      `Added ${added}. Check its tools above and tick the ones that change things.`);
+      `Added ${added}. Check its tools above: ones that sound like they change things ask first; untick any that are safe.`);
     if (ok) name.value = command.value = args.value = '';
   });
 

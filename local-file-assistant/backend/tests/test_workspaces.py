@@ -50,6 +50,22 @@ def test_index_search_is_limited_to_the_workspace_folders(client, two_folders):
     assert inside == {"college fee receipt.txt"}
 
 
+def test_a_small_workspace_in_a_big_index_still_gets_its_hits(client, tmp_path):
+    """Filtering the top hits afterwards left such a workspace with none, and FILES ONLY then refused a question its
+    own file answers."""
+    big, small = tmp_path / "Big", tmp_path / "Small"
+    big.mkdir()
+    small.mkdir()
+    for i in range(100):  # many stronger matches elsewhere, more than the widened search pool holds (4 x 20)
+        (big / f"zorbline report {i}.txt").write_text("zorbline " * 40 + f"report number {i}", encoding="utf-8")
+    (small / "zorbline note.txt").write_text("one zorbline mention", encoding="utf-8")
+    for folder in (big, small):
+        assert _add_and_wait(client, folder)["state"] == "done"
+    assert not {r["name"] for r in hybrid_search("zorbline", limit=6)["results"]} & {"zorbline note.txt"}  # the pool is crowded
+    inside = {r["name"] for r in hybrid_search("zorbline", limit=6, within=[str(small)])["results"]}
+    assert inside == {"zorbline note.txt"}
+
+
 def test_the_file_agent_never_opens_files_outside_the_workspace(monkeypatch, two_folders):
     a, b = two_folders
     files = [{"path": str(p), "name": p.name} for p in (*a.iterdir(), *b.iterdir())]

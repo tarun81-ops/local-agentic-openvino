@@ -20,6 +20,7 @@ from app.config import settings
 log = logging.getLogger(__name__)
 
 _lock = threading.Lock()
+config_lock = threading.RLock()  # config.json and graph.pbtxt: one read-modify-write (and restart) at a time
 _proc: subprocess.Popen | None = None
 _state = {"status": "unknown", "detail": ""}  # unknown | running | starting | missing | failed | off
 
@@ -39,6 +40,17 @@ def ovms_dir() -> Path:
 
 def config_path() -> Path:
     return settings.data_dir / "ovms" / "models" / "config.json"
+
+
+def write_atomic(path: Path, text: str) -> None:
+    """Writes beside the file, then swaps it in whole: OVMS re-reads config.json while it runs and must never see half a
+    file, and a crash mid-write must not leave a broken one behind."""
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _port() -> int:
@@ -163,11 +175,15 @@ def stop() -> None:
     _proc = None
 
 
-def restart() -> bool:
-    """Stops the OVMS this backend started and starts it again (in the background). False when OVMS wasn't started by
-    the app (the user runs it by hand): then it is left alone."""
+def restart(wait: bool = False) -> bool:
+    """Stops the OVMS this backend started and starts it again: in the background, or with wait=True until it answers
+    (or gives up; status() says which). False when OVMS wasn't started by the app (the user runs it by hand): then it
+    is left alone."""
     if _proc is None or _proc.poll() is not None:
         return False
     stop()
-    ensure_running_async()
+    if wait:
+        ensure_running(wait_s=180)  # the first start on another device compiles the model
+    else:
+        ensure_running_async()
     return True

@@ -115,8 +115,8 @@ def phrase(data: dict) -> str:
         return base
     try:
         idle.touch()
-        r = client.get_client().chat.completions.create(
-            model=client.current_model(),
+        r = client.get_client(local=True).chat.completions.create(  # your tasks and events stay on this PC
+            model=client.current_model(local=True),
             messages=[{"role": "user", "content": "Rewrite this daily briefing as a friendly message of at most 3 short sentences. Use only the facts given and add nothing.\n\n" + base}],
             max_tokens=160,
         )

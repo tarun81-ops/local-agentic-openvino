@@ -39,6 +39,7 @@ _setup_logging()
 async def lifespan(app: FastAPI):
     assistant_db.migrate()
     ovms_runner.ensure_running_async()  # the model server, so no terminal has to stay open; never delays startup
+    mcp.start_background()  # plug-in tool servers, in a thread: a broken one must not hold up startup or the first chat
     watcher.start()
     # Memories come only from "remember that ..." in chat. Facts the model used to guess from chats
     # waited in a review queue as "pending" and were never used; that queue is gone, so clear it.

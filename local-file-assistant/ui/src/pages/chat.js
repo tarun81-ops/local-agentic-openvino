@@ -12,7 +12,7 @@ const LANGS = [['', 'Default'], ['english', 'English'], ['hinglish', 'Hinglish']
 const MODES = [
   ['auto', 'Auto', 'Files when they help, otherwise a general answer'],
   ['files', 'Files', 'Only answer from your indexed files, with citations'],
-  ['files_only', 'Files only', 'Answers only from your files; if they don’t have it, says so instead of a general answer'],
+  ['files_only', 'Files only', 'Checks each answer against your files; if it can’t back it with a file, says so instead of a general answer. A small model can still miss a mistake, so open the source.'],
   ['chat', 'Chat', 'General answer, your files are not searched'],
 ];
 

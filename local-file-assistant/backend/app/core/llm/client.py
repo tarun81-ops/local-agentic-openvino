@@ -114,12 +114,13 @@ def parse_json_object(text: str) -> dict:
     return {}
 
 
-def get_client() -> OpenAI:
+def get_client(local: bool = False) -> OpenAI:
     """OpenVINO Model Server's OpenAI-compatible API (the model runs on the NPU, iGPU or CPU), or the other
-    OpenAI-compatible server switched on in Settings > Model (core/llm/external.py)."""
+    OpenAI-compatible server switched on in Settings > Model (core/llm/external.py). local=True is always OVMS: image
+    captions and the briefing must never leave this PC, whatever the other server setting says."""
     from app.core.llm import external
 
-    ext = external.active()
+    ext = None if local else external.active()
     if ext:  # plain OpenAI API: no OVMS-only request fields
         return OpenAI(base_url=ext["url"], api_key="unused", timeout=httpx.Timeout(settings.llm_timeout_s, connect=5), max_retries=0)
     # No retries: a second attempt doubles the wait, and the caller reports the failure anyway.
@@ -133,12 +134,12 @@ def get_client() -> OpenAI:
     return client
 
 
-def current_model() -> str:
-    """The model picked in Settings (saved in the data dir), else OV_CHAT_MODEL.
+def current_model(local: bool = False) -> str:
+    """The model picked in Settings (saved in the data dir), else OV_CHAT_MODEL; local=True ignores the other server.
     (Saved under "ov_model": an old Ollama name saved as "model" must not be sent to OVMS.)"""
     from app.core.llm import external
 
-    ext = external.active()
+    ext = None if local else external.active()
     return ext["model"] if ext else prefs.get("ov_model") or settings.ov_chat_model
 
 
