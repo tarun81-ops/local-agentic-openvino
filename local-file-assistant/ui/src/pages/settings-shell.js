@@ -1,6 +1,7 @@
 import { el } from '../components/common.js';
 import { render as renderFiles } from './files.js';
 import { render as renderMemory } from './memory.js';
+import { render as renderPlugins } from './plugins.js';
 import { render as renderGeneral } from './settings.js';
 
 // Settings: the general settings, Files & PC access (the PC access switch and drives, Tidy-up undo
@@ -10,6 +11,7 @@ export const TABS = [
   ['general', 'General', renderGeneral],
   ['files', 'Files & PC access', renderFiles],
   ['memory', 'Memory', renderMemory],
+  ['plugins', 'Plug-in tools', renderPlugins],
 ];
 
 let lastTab = 'general'; // reopening Settings returns to the tab you were on

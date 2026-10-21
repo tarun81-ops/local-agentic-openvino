@@ -12,6 +12,7 @@ from datetime import datetime
 
 from app.core.assistant import actions, chat_recall, conversation, file_agent, memory_store, prompts, tasks, workspaces
 from app.core.assistant.tools import intents
+from app.core.assistant.tools import mcp, registry
 from app.core.assistant.tools.registry import ToolError
 from app.core import calc, facts, find_file
 from app.core.assistant.router import memory_command, organize_intent, needs_rewrite, route, task_intent
@@ -439,6 +440,52 @@ def _action_reply(req: ChatRequest, conv: dict | None, act: dict):
     yield from _finish(req, conv, {"citations": [], "uncited": [], "all_verified": False, "answer": reply, "truncated": False, "route": "action"})
 
 
+def _tool_reply(req: ChatRequest, conv: dict | None, history: list[dict], calls: list[dict]):
+    """Plug-in (MCP) tools, planned from the user's own message (mcp.plan). Read-only tools run now and their output
+    is handed to the model as quoted data; a tool that changes things or sends data becomes an approval card with the
+    exact arguments (one per question) and runs only on APPROVE. A tool's output is never planned on, so text in it
+    can't trigger another call."""
+    yield _sse("route", {"route": "chat"})
+    results, problems, proposal = [], [], None
+    for c in calls:
+        name, tool = c["tool"], registry.get(c["tool"])
+        try:
+            if tool.risk == "read":
+                args = registry.validate_call(name, c["args"])
+                yield _sse("pc_step", {"step": "tool", "detail": f"Ran the plug-in tool {mcp.label(name)}"})
+                results.append((name, tool.run(args)["text"]))
+            elif proposal is None:
+                proposal = actions.propose(name, c["args"], conv["id"] if conv else None)
+                yield _sse("tool_proposal", proposal)
+        except Exception as exc:  # ToolError, McpError: said in words, never a stack trace
+            problems.append(f"{mcp.label(name)}: {exc}")
+    answer, truncated = "", False
+    if results:
+        data = "\n\n".join(f"Output of the tool {mcp.label(n)}:\n{t}" for n, t in results)
+        prompt = prompts.with_context(req.message, {"app": "plug-in tools", "selection": data})
+        try:
+            for what, value in _generate(chat_stream(prompt, history, model=req.model)):
+                if what == "token":
+                    answer += value
+                    yield _sse("token", {"delta": value})
+                else:
+                    truncated = value
+        except Exception as exc:
+            log.exception("answer after tools failed")
+            yield _sse("error", {"detail": _model_error(exc)})
+            return
+    else:
+        answer = ("I can do that with a plug-in tool. Check the exact details below, then approve." if proposal
+                  else "The plug-in tool couldn't run. " + " ".join(problems))
+        yield _sse("token", {"delta": answer})
+    if problems and results:
+        note = "\n\n(Not run: " + "; ".join(problems) + ")"
+        answer += note
+        yield _sse("token", {"delta": note})
+    yield from _finish(req, conv, {"citations": [], "uncited": [], "all_verified": False, "answer": answer,
+                                   "truncated": truncated, "route": "chat"})
+
+
 def _stream(req: ChatRequest, conv: dict | None):
     act = None if memory_command(req.message) or task_intent(req.message) else intents.from_message(req.message)
     if act:  # from the user's own words only; model output and file text are never turned into actions
@@ -470,6 +517,11 @@ def _stream(req: ChatRequest, conv: dict | None):
                                            "answer": text, "truncated": False, "route": "files"})
             return
     history = conversation.window(conv["messages"]) if conv else []
+    if req.mode in ("auto", "chat") and not req.attach:
+        calls = mcp.plan(req.message)  # [] without plug-in tools, or when none fits the message
+        if calls:
+            yield from _tool_reply(req, conv, history, calls)
+            return
     pinned: list[str] = []
     unlock_q = ""
     pw = _PASSWORD.search(req.message)

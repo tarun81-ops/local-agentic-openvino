@@ -5,10 +5,11 @@ from logging.handlers import RotatingFileHandler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import routes_actions, routes_chat, routes_collections, routes_context, routes_conversations, routes_events, routes_files, routes_find, routes_forms, routes_learning, routes_memory, routes_models, routes_organize, routes_pc, routes_personalize, routes_proactive, routes_search, routes_settings, routes_setup, routes_study, routes_tasks, routes_voice, routes_workspaces
+from app.api import routes_actions, routes_chat, routes_collections, routes_context, routes_conversations, routes_events, routes_files, routes_find, routes_forms, routes_learning, routes_mcp, routes_memory, routes_models, routes_organize, routes_pc, routes_personalize, routes_proactive, routes_search, routes_settings, routes_setup, routes_study, routes_tasks, routes_voice, routes_workspaces
 from app.config import settings
 from app.core import doc_photos, pc_access, pc_content
 from app.core.assistant import memory_store, scheduler
+from app.core.assistant.tools import mcp
 from app.core.watcher import watcher
 from app.core.llm import ovms_runner
 from app.db import assistant_db
@@ -60,6 +61,7 @@ async def lifespan(app: FastAPI):
     scheduler.stop()
     watcher.stop()
     ovms_runner.stop()
+    mcp.stop_all()  # plug-in tool servers the app started
 
 
 app = FastAPI(title="Local File Assistant", lifespan=lifespan)
@@ -80,5 +82,5 @@ def health():
     return {"ok": True}
 
 
-for module in (routes_search, routes_actions, routes_chat, routes_collections, routes_context, routes_conversations, routes_events, routes_files, routes_find, routes_forms, routes_learning, routes_memory, routes_models, routes_organize, routes_pc, routes_personalize, routes_proactive, routes_settings, routes_setup, routes_study, routes_tasks, routes_voice, routes_workspaces):
+for module in (routes_search, routes_actions, routes_chat, routes_collections, routes_context, routes_conversations, routes_events, routes_files, routes_find, routes_forms, routes_learning, routes_mcp, routes_memory, routes_models, routes_organize, routes_pc, routes_personalize, routes_proactive, routes_settings, routes_setup, routes_study, routes_tasks, routes_voice, routes_workspaces):
     app.include_router(module.router)

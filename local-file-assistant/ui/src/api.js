@@ -117,6 +117,11 @@ export const api = {
   setupCancel: () => request('/setup/model/pull/cancel', { method: 'POST' }),
   // Settings > Model (backend/app/api/routes_models.py); "Use" is setModel above.
   models: () => request('/models'),
+  // Plug-in tools from local MCP servers (backend/app/api/routes_mcp.py)
+  mcpServers: () => request('/mcp'),
+  addMcpServer: (body) => request('/mcp/servers', { method: 'POST', body }),
+  patchMcpServer: (name, body) => request(`/mcp/servers/${encodeURIComponent(name)}`, { method: 'PATCH', body }),
+  removeMcpServer: (name) => request(`/mcp/servers/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   removeModel: (name) => request('/models/remove', { method: 'POST', body: { name } }),
   setDevice: (device) => request('/models/device', { method: 'PUT', body: { device } }),
   setExternal: (body) => request('/models/external', { method: 'PUT', body }),
