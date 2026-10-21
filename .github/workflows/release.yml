@@ -1,0 +1,106 @@
+# Builds the Windows installer on a GitHub-hosted Windows machine and publishes it as a release.
+# Run it by pushing a version tag that matches ui/package.json, for example:  git tag v0.3.0 ; git push origin v0.3.0
+# Or open the Actions tab, pick "Release installer", and click Run workflow (it then builds and attaches the files to
+# the tag v<version> from package.json). Nothing is signed: Windows SmartScreen will warn on first run.
+name: Release installer
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      OVMS_VERSION: "2026.4.0"   # keep in step with docs/OPENVINO.md
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: local-file-assistant/backend/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: local-file-assistant/ui/package-lock.json
+
+      - name: Read the app version
+        id: ver
+        working-directory: local-file-assistant/ui
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          "version=$v" >> $env:GITHUB_OUTPUT
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$v") {
+            throw "Tag $env:GITHUB_REF_NAME does not match ui/package.json version $v. Bump the version, commit, then tag again."
+          }
+
+      - name: Python environment (the build script expects backend\.venv)
+        working-directory: local-file-assistant/backend
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
+          # The search re-ranker ships inside the installer. If the download fails the build still works without it.
+          try { .\.venv\Scripts\python.exe -m app.core.search.reranker } catch { Write-Warning "Re-ranker download failed: $_" }
+
+      - name: OpenVINO Model Server (bundled in the installer)
+        run: |
+          $zip = "$env:RUNNER_TEMP\ovms.zip"
+          Invoke-WebRequest "https://github.com/openvinotoolkit/model_server/releases/download/v$env:OVMS_VERSION/ovms_windows_${env:OVMS_VERSION}_python_on.zip" -OutFile $zip
+          $dest = "$env:RUNNER_TEMP\ovms-unzip"
+          Expand-Archive $zip -DestinationPath $dest
+          $exe = Get-ChildItem $dest -Recurse -Filter ovms.exe | Select-Object -First 1
+          if (-not $exe) { throw "ovms.exe not found in the OVMS download" }
+          "OVMS_DIR=$($exe.DirectoryName)" >> $env:GITHUB_ENV
+
+      - name: Build the installer (web UI, frozen backend with smoke test, NSIS)
+        working-directory: local-file-assistant/ui
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # unsigned build
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: List what was built
+        working-directory: local-file-assistant/ui/release
+        run: Get-ChildItem | Select-Object Name, @{n="MB";e={[math]::Round($_.Length/1MB,1)}}
+
+      - name: Keep the files on the run page (also useful if publishing fails)
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ steps.ver.outputs.version }}
+          path: |
+            local-file-assistant/ui/release/*.exe
+            local-file-assistant/ui/release/*.blockmap
+            local-file-assistant/ui/release/latest.yml
+          retention-days: 14
+
+      - name: Publish the GitHub release
+        working-directory: local-file-assistant/ui/release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.ver.outputs.version }}
+        run: |
+          $files = @(Get-ChildItem *.exe, *.blockmap, latest.yml | ForEach-Object { $_.FullName })
+          gh release view $env:TAG --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:TAG @files --clobber --repo $env:GITHUB_REPOSITORY
+          } else {
+            $notes = "docs/releases/$($env:TAG.TrimStart('v')).md"
+            $args = @("release", "create", $env:TAG) + $files + @("--repo", $env:GITHUB_REPOSITORY, "--title", "Local File Assistant (OpenVINO) $env:TAG", "--target", $env:GITHUB_SHA)
+            if (Test-Path "$env:GITHUB_WORKSPACE\local-file-assistant\$notes") { $args += @("--notes-file", "$env:GITHUB_WORKSPACE\local-file-assistant\$notes") } else { $args += @("--generate-notes") }
+            gh @args
+          }
