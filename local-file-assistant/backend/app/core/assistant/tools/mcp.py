@@ -18,8 +18,10 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 from pathlib import Path
 
+from app.config import settings
 from app.core import prefs
 from app.core.assistant.tools import registry
 
@@ -29,6 +31,8 @@ PROTOCOL = "2025-06-18"
 MAX_STEPS = 3  # tool calls per question: the 2B model plans badly beyond that
 MAX_RESULT = 4000  # characters of a tool result kept for the answer (prompts stay bounded)
 TIMEOUT_S = 30
+MAX_PAGES = 5  # tools/list pages followed (nextCursor); a server with more tools than that is cut off
+LOG_MAX = 1_000_000  # bytes of a server's stderr log before it starts over
 _PREF = "mcp_servers"
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 _TYPES = {"string": str, "number": numbers.Real, "integer": int, "boolean": bool, "object": dict, "array": list}
@@ -42,8 +46,9 @@ class Client:
     """One running MCP server. ponytail: one request at a time per server (a lock); concurrent calls if a slow tool
     ever blocks the chat."""
 
-    def __init__(self, command: list[str]):
-        self.proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    def __init__(self, command: list[str], name: str = ""):
+        self.err = _stderr_log(name) if name else subprocess.DEVNULL
+        self.proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.err,
                                      text=True, encoding="utf-8", errors="replace", bufsize=1,
                                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.inbox: queue.Queue = queue.Queue()
@@ -88,11 +93,29 @@ class Client:
         self.request("initialize", {"protocolVersion": PROTOCOL, "capabilities": {},
                                     "clientInfo": {"name": "local-file-assistant", "version": "0.2"}})
         self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
-        return self.request("tools/list").get("tools", [])
+        tools, cursor = [], None
+        for _ in range(MAX_PAGES):
+            page = self.request("tools/list", {"cursor": cursor} if cursor else {})
+            tools += page.get("tools", [])
+            cursor = page.get("nextCursor")
+            if not cursor:
+                break
+        return tools
 
     def close(self) -> None:
         if self.proc.poll() is None:
             self.proc.kill()
+        if self.err is not subprocess.DEVNULL:
+            self.err.close()
+
+
+def _stderr_log(name: str):
+    """logs\\mcp-<server>.log: what the server prints on stderr, so a failing one can be diagnosed. ponytail: the size is
+    checked when the server starts (over LOG_MAX it starts over), not while it runs."""
+    path = settings.data_dir / "logs" / f"mcp-{name}.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    big = path.is_file() and path.stat().st_size > LOG_MAX
+    return open(path, "w" if big else "a", encoding="utf-8", errors="replace")
 
 
 _clients: dict[str, Client] = {}
@@ -123,7 +146,7 @@ def add_server(name: str, command: str, args: list[str]) -> dict:
         raise ValueError(f"{exe or 'The command'} wasn't found on this PC. Give the full path to the program.")
     item = {"name": name, "command": exe, "args": [str(a) for a in args or []][:20], "enabled": True, "writes": [], "reads": []}
     _save(servers() + [item])
-    refresh()
+    _changed()
     return item
 
 
@@ -142,12 +165,21 @@ def update_server(name: str, enabled: bool | None = None, writes: list[str] | No
         found["reads"] = sorted({str(r) for r in reads})
     found["reads"] = sorted(set(found["reads"]) - set(found["writes"]))  # asking wins when both are set
     _save(items)
-    refresh()
+    _changed()
 
 
 def remove_server(name: str) -> None:
     _save([s for s in servers() if s["name"] != name])
-    refresh()
+    _changed()
+
+
+def _changed() -> None:
+    """After a Settings change: the tools are re-registered now (a tool just marked "ask first" must never run
+    unasked, a removed server's tools must go), and starting or stopping servers happens in the background, so the
+    request returns at once; the page polls GET /mcp, which shows a new server as "starting" until it answers."""
+    with _mutex:
+        _reregister({s["name"]: s for s in servers() if s["enabled"]})
+    threading.Thread(target=refresh, daemon=True, name="mcp-refresh").start()
 
 
 # ---------- running servers and registering their tools ----------
@@ -201,11 +233,17 @@ def call(server: str, tool: str, args: dict) -> str:
     client = _clients.get(server)
     if client is None or client.proc.poll() is not None:
         raise McpError(f"the plug-in server {server} isn't running")
-    result = client.request("tools/call", {"name": tool, "arguments": args})
-    text = "\n".join(c.get("text", "") for c in result.get("content", []) if c.get("type") == "text").strip()
-    if result.get("isError"):
-        raise McpError(text[:300] or "the tool reported an error")
-    return text[:MAX_RESULT] or "(the tool returned no text)"
+    t, ok = time.monotonic(), False
+    try:
+        result = client.request("tools/call", {"name": tool, "arguments": args})
+        text = "\n".join(c.get("text", "") for c in result.get("content", []) if c.get("type") == "text").strip()
+        if result.get("isError"):
+            raise McpError(text[:300] or "the tool reported an error")
+        ok = True
+        return text[:MAX_RESULT] or "(the tool returned no text)"
+    finally:  # argument names only: their values may be file text or private data
+        log.info("plug-in tool call: server=%s tool=%s args=%s %.2fs %s", server, tool, ",".join(sorted(args)) or "-",
+                 time.monotonic() - t, "ok" if ok else "failed")
 
 
 def _register(server: str, tool: dict, write: bool) -> None:
@@ -244,7 +282,7 @@ def refresh() -> dict[str, dict]:
                 continue
             client = None
             try:
-                client = Client([s["command"], *s["args"]])
+                client = Client([s["command"], *s["args"]], name)
                 state = {"tools": client.start(), "error": ""}
             except Exception as exc:
                 log.warning("MCP server %s failed: %s", name, exc)
@@ -257,12 +295,17 @@ def refresh() -> dict[str, dict]:
                     _clients[name] = client
                 _state[name] = state
         with _mutex:
-            for name in [n for n in registry.REGISTRY if n.startswith("mcp.")]:
-                registry.REGISTRY.pop(name)
-            for name, s in wanted.items():
-                for t in _state.get(name, {}).get("tools", []):
-                    _register(name, t, _is_write(s, t))
+            _reregister({s["name"]: s for s in servers() if s["enabled"]})  # read again: Settings may have changed meanwhile
             return {k: dict(v) for k, v in _state.items()}
+
+
+def _reregister(wanted: dict[str, dict]) -> None:
+    """The registry's mcp.* entries rebuilt from what the servers listed. Caller holds _mutex."""
+    for name in [n for n in registry.REGISTRY if n.startswith("mcp.")]:
+        registry.REGISTRY.pop(name)
+    for name, s in wanted.items():
+        for t in _state.get(name, {}).get("tools", []):
+            _register(name, t, _is_write(s, t))
 
 
 def start_background() -> None:
@@ -313,10 +356,11 @@ Reply with JSON only: {{"calls": [{{"tool": "<name>", "args": {{...}}}}]}}. At m
 _WORD = re.compile(r"[a-z]{4,}")
 
 
-def plan(message: str) -> list[dict]:
+def plan(message: str, notes: list[str] | None = None) -> list[dict]:
     """Up to MAX_STEPS {"tool", "args"} for this message. The planner sees only the user's message and the tool list,
     never a tool result or file text, so nothing a tool returns can ask for another call. A message that shares no
-    word with any tool skips the model call entirely (chat stays as fast as before)."""
+    word with any tool skips the model call entirely (chat stays as fast as before). Planning always runs on this PC
+    (llm_json local=True); when that engine is down the plan is skipped and `notes` gets a line for the step log."""
     start_background()  # first question since the app started: servers still starting offer no tools yet; chat doesn't wait
     with _mutex:
         tools = {n: t for n, t in registry.REGISTRY.items() if n.startswith("mcp.")}
@@ -338,6 +382,8 @@ def plan(message: str) -> list[dict]:
         data = llm_json(PLAN_PROMPT.format(message=message[:1000], tools="\n".join(entries[:20]), n=MAX_STEPS))
     except Exception as exc:
         log.info("tool planning skipped: %s", exc)
+        if notes is not None:
+            notes.append("Plug-in tools skipped: the model on this PC isn't answering")
         return []
     calls = data.get("calls") if isinstance(data.get("calls"), list) else []
     return [{"tool": c["tool"], "args": c.get("args") if isinstance(c.get("args"), dict) else {}}

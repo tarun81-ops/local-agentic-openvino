@@ -86,3 +86,14 @@ def test_eval_recall_does_not_regress(tmp_path, monkeypatch):
     spec.loader.exec_module(mod)
     r = mod.run(verbose=False)
     assert r["recall@3"] >= 0.95 and r["recall@8"] >= 0.97 and r["recall@1"] >= 0.85, r
+
+
+def test_the_step_log_says_when_the_local_model_cannot_plan_or_choose(monkeypatch):
+    from app.core.assistant import file_agent
+
+    monkeypatch.setattr(file_agent, "llm_json", lambda *a, **k: (_ for _ in ()).throw(ConnectionError("engine down")))
+    assert file_agent.understand("my electricity bill")["model_down"]
+    notes = []
+    cands = [{"name": f"bill {i}.pdf", "folder": "C:/d", "modified": "", "path": f"C:/d/bill {i}.pdf"} for i in (1, 2, 3)]
+    assert file_agent.choose("my electricity bill", cands, 2, notes) == cands[:2]  # the top matches, quietly
+    assert notes == [file_agent.DOWN_CHOOSE]

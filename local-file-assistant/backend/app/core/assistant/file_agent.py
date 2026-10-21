@@ -69,6 +69,11 @@ Pick up to {n} files most likely to contain the answer. Reply with JSON only: {{
 Use the numbers shown. If none fit, reply {{"pick": []}}."""
 
 
+# Step-log lines when the local engine doesn't answer. Planning never moves to the other server (llm_json local=True).
+DOWN_PLAN = "The model on this PC isn't answering, so your own words are searched"
+DOWN_CHOOSE = "The model on this PC isn't answering, so the top matches are read"
+
+
 def llm_json(prompt: str, max_tokens: int = 150) -> dict:
     """Indirection so tests (and a future dedicated small model) can replace the model call."""
     from app.core.llm.client import llm_json as call
@@ -116,6 +121,7 @@ def understand(question: str) -> dict:
         data = llm_json(PLAN_PROMPT.format(question=question[:500]))
     except Exception as exc:
         log.info("file agent: planning model unavailable (%s); using plain keywords", exc)
+        plan["model_down"] = True  # gather() says so in the step log
         return plan
     words = data.get("keywords")
     if isinstance(words, list):
@@ -251,7 +257,8 @@ def owner_pool(question: str, plan: dict, owner_name: str, content_hits: list[di
 
 # ---------- 3. choose ----------
 
-def choose(question: str, cands: list[dict], n: int = MAX_READ) -> list[dict]:
+def choose(question: str, cands: list[dict], n: int = MAX_READ, notes: list[str] | None = None) -> list[dict]:
+    """notes: gets a line for the step log when the local model can't choose (the top matches are read instead)."""
     if len(cands) <= 1:
         return cands
     listing = "\n".join(f"{i}. {c['name']}  (folder: {Path(c['folder']).name}; modified {c['modified'] or '?'}"
@@ -264,6 +271,8 @@ def choose(question: str, cands: list[dict], n: int = MAX_READ) -> list[dict]:
             picks = [n for n in raw if isinstance(n, int) and not isinstance(n, bool) and 1 <= n <= len(cands)]
     except Exception as exc:
         log.info("file agent: choosing model unavailable (%s); taking the top matches", exc)
+        if notes is not None:
+            notes.append(DOWN_CHOOSE)
         return cands[:n]
     chosen = [cands[i - 1] for i in dict.fromkeys(picks)][:n]
     return chosen or cands[:n]  # an empty pick must not mean "read nothing" when files matched by name
@@ -488,7 +497,8 @@ def gather(question: str, content_hits: list[dict] | None = None, owner_name: st
     plan = understand(question)
     mine = owner_name is not None
     yield {"step": "plan", "detail": "Looking for: " + (", ".join(plan["keywords"]) or "(no search words)")
-           + (f" (in the name of {owner_name})" if owner_name else "")}
+           + (f" (in the name of {owner_name})" if owner_name else "")
+           + (f". {DOWN_PLAN}" if plan.get("model_down") else "")}
     others: list[dict] = []
     if mine:
         cands, theirs = owner_pool(question, plan, owner_name, content_hits)
@@ -507,15 +517,18 @@ def gather(question: str, content_hits: list[dict] | None = None, owner_name: st
            + (f"; {len(others)} skipped (other people's)" if others else ""), "files": [c["name"] for c in cands][:20]}
     if not cands:
         return {"chunks": [], "files": [], **({"others": others} if mine else {})}
+    notes: list[str] = []
     if owner_name:  # known to be the user's first, then the model's picks, then the rest, until one in their name
         known_first = [c for c in cands if c.get("via") == "card"]
         rest = [c for c in cands if c.get("via") != "card"]
-        first = choose(question, rest[:MAX_CANDIDATES], MAX_READ) if rest else []
+        first = choose(question, rest[:MAX_CANDIDATES], MAX_READ, notes) if rest else []
         picked = (known_first + first + [c for c in rest if c not in first])[:MAX_READ_OWNER]
     elif mine:  # the name isn't known: read the best few and say whose they are
-        picked = choose(question, cands[:MAX_CANDIDATES])
+        picked = choose(question, cands[:MAX_CANDIDATES], notes=notes)
     else:
-        picked = choose(question, cands)
+        picked = choose(question, cands, notes=notes)
+    for note in notes:
+        yield {"step": "plan", "detail": note}
     chunks: list[dict] = []
     read: list[str] = []
     locked: list[str] = []

@@ -523,7 +523,10 @@ def _stream(req: ChatRequest, conv: dict | None):
             return
     history = conversation.window(conv["messages"]) if conv else []
     if req.mode in ("auto", "chat") and not req.attach:
-        calls = mcp.plan(req.message)  # [] without plug-in tools, or when none fits the message
+        notes: list[str] = []
+        calls = mcp.plan(req.message, notes)  # [] without plug-in tools, or when none fits the message
+        for note in notes:
+            yield _sse("pc_step", {"step": "plan", "detail": note})
         if calls:
             yield from _tool_reply(req, conv, history, calls)
             return
@@ -585,6 +588,7 @@ def _stream(req: ChatRequest, conv: dict | None):
             for c in got:
                 c["match"] = "name"
             chunks.extend(got)
+        req.attach = list(dict.fromkeys(c["path"] for c in chunks))  # what _finish keeps for follow-ups: files read, not all sent
         if locked and not chunks:
             text = _locked_reply(locked)
             yield _sse("token", {"delta": text})
@@ -597,7 +601,7 @@ def _stream(req: ChatRequest, conv: dict | None):
             yield from _finish(req, conv, {"citations": [], "uncited": [], "all_verified": False, "answer": text,
                                            "truncated": False, "route": kind})
             return
-        pinned = list(dict.fromkeys(c["path"] for c in chunks))
+        pinned = req.attach
         yield _sse("results", {"results": [_public(c) for c in chunks], "semantic": False})
     elif pinned:
         kind = "files"

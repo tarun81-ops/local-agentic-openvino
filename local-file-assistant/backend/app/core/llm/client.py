@@ -147,13 +147,16 @@ def set_model(name: str) -> None:
     prefs.set("ov_model", name)
 
 
-def llm_json(prompt: str, max_tokens: int = 300) -> dict:
-    """One non-streamed call that must answer with a JSON object; {} if it doesn't."""
+def llm_json(prompt: str, max_tokens: int = 300, local: bool = True) -> dict:
+    """One non-streamed call that must answer with a JSON object; {} if it doesn't. local=True (the default) keeps it
+    on this PC: the file pickers and the tool planner send file names and the tool list, which only the user's
+    questions and flashcards (local=False) may take to the other server. A planner whose local engine is down fails
+    (the caller skips its plan) instead of falling back to the other server."""
     from app.core.llm import idle
 
     idle.touch()
-    r = get_client().chat.completions.create(
-        model=current_model(),
+    r = get_client(local=local).chat.completions.create(
+        model=current_model(local=local),
         messages=[{"role": "user", "content": prompt}],
         max_tokens=max_tokens,
         temperature=0.2,  # a plan or a list of facts, not prose

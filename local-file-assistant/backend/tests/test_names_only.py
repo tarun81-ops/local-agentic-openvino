@@ -217,7 +217,7 @@ def test_study_reads_the_file_live_and_cites_its_page(pc_drive, monkeypatch):
     pdf = pc_drive / "Users" / "me" / "Documents" / "Bills" / "acme_invoice.pdf"
     seen = {}
     monkeypatch.setattr(routes_study.ram, "is_low", lambda: False)
-    monkeypatch.setattr(routes_study.client, "llm_json", lambda p, max_tokens=300: seen.update(p=p) or {"items": [{"front": "Invoice total?", "back": "$4,250", "src": 1}]})
+    monkeypatch.setattr(routes_study.client, "llm_json", lambda p, max_tokens=300, **k: seen.update(p=p) or {"items": [{"front": "Invoice total?", "back": "$4,250", "src": 1}]})
     with TestClient(app, base_url="http://127.0.0.1:8756") as c:
         r = c.post("/study/generate", json={"path": str(pdf), "kind": "flashcards", "count": 5}, headers=AUTH)
         assert r.status_code == 200, r.text

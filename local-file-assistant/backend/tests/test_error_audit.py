@@ -252,7 +252,7 @@ def test_I_json_is_found_inside_fences_or_chatter(raw, monkeypatch):
                 def create(**k):
                     return R(raw)
 
-    monkeypatch.setattr(client, "get_client", lambda: Fake)
+    monkeypatch.setattr(client, "get_client", lambda local=False: Fake)
     assert client.llm_json("x") == {"pick": [2]}
 
 

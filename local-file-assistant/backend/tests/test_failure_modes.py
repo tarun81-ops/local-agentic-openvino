@@ -166,7 +166,7 @@ def test_json_answers_are_parsed_even_with_fences_or_thinking(monkeypatch):
                 def create(**kw):
                     return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=next(replies)))])
 
-    monkeypatch.setattr(client, "get_client", lambda: Fake)
+    monkeypatch.setattr(client, "get_client", lambda local=False: Fake)
     assert client.llm_json("p") == {"moves": [1, 2]}
     assert client.llm_json("p") == {"ok": True}
     assert client.llm_json("p") == {}

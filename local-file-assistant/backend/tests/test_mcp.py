@@ -28,6 +28,7 @@ def env(monkeypatch, tmp_path):
     log = tmp_path / "calls.jsonl"
     log.touch()
     mcp.add_server("fake", sys.executable, [SERVER, str(log)])
+    mcp.refresh()  # adding returns at once and starts it in the background; tests want its tools now
     planner = {"calls": [], "prompts": []}
 
     def fake_llm_json(prompt, max_tokens=300):
@@ -160,3 +161,55 @@ def test_a_message_unrelated_to_any_tool_skips_planning(env):
 def test_a_command_that_does_not_exist_is_refused_in_plain_words(env):
     r = env["client"].post("/mcp/servers", json={"name": "nope", "command": "C:/no/such/server.exe"}, headers=AUTH)
     assert r.status_code == 400 and "wasn't found" in r.json()["detail"]
+
+
+def test_adding_a_server_that_never_answers_returns_at_once_and_shows_it_starting(env, tmp_path):
+    import time
+
+    hang = tmp_path / "hang.py"
+    hang.write_text("import time\ntime.sleep(3)\n", encoding="utf-8")  # reads nothing, answers nothing
+    t = time.monotonic()
+    r = env["client"].post("/mcp/servers", json={"name": "hang", "command": sys.executable, "args": [str(hang)]}, headers=AUTH)
+    assert r.status_code == 200 and time.monotonic() - t < 1, "the request waited for the server"
+    assert next(s for s in r.json()["servers"] if s["name"] == "hang")["starting"]
+    t = time.monotonic()
+    env["client"].patch("/mcp/servers/hang", json={"enabled": False}, headers=AUTH)
+    env["client"].delete("/mcp/servers/hang", headers=AUTH)
+    assert time.monotonic() - t < 1
+
+
+def test_marking_a_tool_ask_first_applies_before_the_background_refresh(env):
+    mcp.update_server("fake", writes=["count_words"])  # no refresh() call: the registry must already say "ask"
+    assert registry.get("mcp.fake.count_words").risk == "external"
+
+
+def test_all_pages_of_tools_are_listed(env, tmp_path):
+    from app.core import prefs
+
+    prefs.set("mcp_servers", [*prefs.get("mcp_servers"), {"name": "paged", "command": sys.executable, "args": [SERVER, str(env["log"]), "paged"]}])
+    st = mcp.refresh()
+    assert len(st["paged"]["tools"]) == 5  # three pages of two, two, one
+    mcp.remove_server("paged")
+
+
+def test_server_stderr_goes_to_its_log_and_each_call_is_logged_without_values(env, caplog):
+    import logging
+
+    log = settings.data_dir / "logs" / "mcp-fake.log"
+    assert "fake server: started" in log.read_text(encoding="utf-8")
+    env["planner"]["calls"] = [{"tool": "mcp.fake.count_words", "args": {"text": "secret words here"}}]
+    with caplog.at_level(logging.INFO, logger=mcp.__name__):
+        _ask(env, "count the words in: secret words here")  # a read-only call that runs without asking
+    line = next(r.getMessage() for r in caplog.records if "plug-in tool call" in r.getMessage())
+    assert "server=fake" in line and "tool=count_words" in line and "args=text" in line and line.endswith("ok")
+    assert "secret" not in caplog.text
+
+
+def test_tool_planning_says_so_in_the_steps_when_the_local_model_is_down(env, monkeypatch):
+    def down(prompt, max_tokens=300):
+        raise ConnectionError("engine down")
+
+    monkeypatch.setattr(llm_client, "llm_json", down)
+    events = _ask(env, "count the words in: a b")
+    assert any(e == "pc_step" and "Plug-in tools skipped" in d["detail"] for e, d in events)
+    assert _ran(env) == []

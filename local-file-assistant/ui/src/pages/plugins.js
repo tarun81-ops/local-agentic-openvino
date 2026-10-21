@@ -82,7 +82,7 @@ export function render(container) {
   add.addEventListener('click', async () => {
     const added = name.value.trim();
     const ok = await run(() => api.addMcpServer({ name: added, command: command.value, args: args.value.split('\n').map((a) => a.trim()).filter(Boolean) }),
-      `Added ${added}. Check its tools above: ones that sound like they change things ask first; untick any that are safe.`);
+      `Added ${added}. It is starting; its tools appear above when it answers. Ones that sound like they change things ask first; untick any that are safe.`);
     if (ok) name.value = command.value = args.value = '';
   });
 

@@ -29,6 +29,23 @@ def embed_query(texts: list[str], timeout: float = 120) -> list[list[float]]:
     return embed([f"Instruct: {instruct}\nQuery:{t}" if instruct else t for t in texts], timeout=timeout)
 
 
-def search(table, query: str, limit: int = 8, root: str | None = None) -> list[dict]:
+WITHIN_POOL = 2000  # second, deeper look for a workspace whose chunks the first top-N missed
+
+
+def search(table, query: str, limit: int = 8, root: str | None = None, within: list[str] | None = None) -> list[dict]:
+    """within: a workspace's folders. Filtered after LanceDB's top `limit`, and when fewer than `limit` survive, once more
+    from the top WITHIN_POOL (same query vector, no second embedding). Not a LanceDB `where`: a workspace folder matches
+    case-insensitively, also for non-ASCII names (pc_access.under), which a SQL prefix filter on the stored path can't.
+    ponytail: a workspace holding less than ~1/250 of a big index can still miss semantic hits (keyword search never
+    does); a stored folder column filtered in LanceDB if that shows up."""
+    from app.core import pc_access
+
     # A short timeout: search must stay usable when the embedder is slow; keyword results still come back.
-    return _table_search(table, embed_query([query], timeout=15)[0], limit, root)
+    vector = embed_query([query], timeout=15)[0]
+    rows = _table_search(table, vector, limit, root)
+    if not within:
+        return rows
+    kept = [r for r in rows if pc_access.under(r["path"], within)]
+    if len(kept) < limit and len(rows) == limit:  # the index has more than it returned: look deeper once
+        kept = [r for r in _table_search(table, vector, WITHIN_POOL, root) if pc_access.under(r["path"], within)][:limit]
+    return kept

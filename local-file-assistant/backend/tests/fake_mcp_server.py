@@ -1,9 +1,11 @@
 """A tiny MCP server over stdio for tests/test_mcp.py: newline-delimited JSON-RPC, five tools. Every tools/call is
-appended to the log file given as the first argument, so the tests can see exactly what ran."""
+appended to the log file given as the first argument, so the tests can see exactly what ran. A second argument "paged"
+lists the tools two per page (nextCursor); one line goes to stderr at start (the app keeps it in logs/mcp-<name>.log)."""
 import json
 import sys
 
 LOG = sys.argv[1]
+PAGED = sys.argv[2:] == ["paged"]
 TOOLS = [
     {"name": "count_words", "description": "Count the words in some text",
      "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}},
@@ -23,11 +25,19 @@ def reply(rid, result):
     sys.stdout.flush()
 
 
+sys.stderr.write("fake server: started\n")
+sys.stderr.flush()
 for line in sys.stdin:
     msg = json.loads(line)
     method, rid = msg.get("method"), msg.get("id")
     if method == "initialize":
         reply(rid, {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "fake", "version": "1"}})
+    elif method == "tools/list" and PAGED:
+        start = int(msg.get("params", {}).get("cursor") or 0)
+        page = {"tools": TOOLS[start:start + 2]}
+        if start + 2 < len(TOOLS):
+            page["nextCursor"] = str(start + 2)
+        reply(rid, page)
     elif method == "tools/list":
         reply(rid, {"tools": TOOLS})
     elif method == "tools/call":

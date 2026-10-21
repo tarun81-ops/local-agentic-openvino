@@ -165,3 +165,75 @@ def test_chat_uses_the_other_server_only_while_it_is_on(c):
     assert str(client.get_client().base_url).startswith("http://127.0.0.1:1234/v1") and client.current_model() == "lm-model"
     external.set(False)
     assert str(client.get_client().base_url).startswith(settings.ov_base_url) and client.current_model() != "lm-model"
+
+
+def test_only_answers_and_flashcards_reach_the_other_server(c, monkeypatch, tmp_path):
+    """With the other server on, a recorder stands in for both servers: captions, the briefing, the file agent's
+    planning and choosing, and the plug-in tool planner all go to this PC; a chat answer and flashcards go out."""
+    from types import SimpleNamespace
+
+    from app.core.assistant import briefing, file_agent
+    from app.core.assistant.tools import mcp, registry
+    from app.core.llm import answerer
+    from app.core.parsers import image_parser
+
+    external.set(True, "http://127.0.0.1:1234/v1", "lm-model")
+    sent = []
+
+    def recorder(local=False):
+        def create(**kw):
+            sent.append((local, kw["model"]))
+            if kw.get("stream"):
+                return iter([SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="ok"), finish_reason="stop")])])
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"keywords": ["fee"], "pick": [1], "calls": []}'))])
+        return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    monkeypatch.setattr(client, "get_client", recorder)
+    monkeypatch.setattr(answerer, "get_client", recorder)  # imported by name there
+    monkeypatch.setattr(briefing, "settings", lambda: {"use_model": True})
+    monkeypatch.setattr(briefing.ram, "is_low", lambda: False)
+    monkeypatch.setattr(mcp, "start_background", lambda: None)
+    tool = {"name": "count_words", "description": "Count the words in some text", "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}}}
+    mcp._state["rec"] = {"tools": [tool], "error": ""}
+    mcp._register("rec", tool, False)
+    try:
+        png = tmp_path / "r.png"
+        png.write_bytes(b"\x89PNG")
+        image_parser.caption(png)
+        briefing.phrase({"tasks": [], "events": [], "overdue": [], "files": {"count": 0, "names": []}})
+        file_agent.understand("my fee receipt")
+        cands = [{"name": f"fee {i}.pdf", "folder": str(tmp_path), "modified": "", "path": str(tmp_path / f"fee {i}.pdf")} for i in (1, 2)]
+        file_agent.choose("my fee receipt", cands)
+        mcp.plan("count the words in this")
+    finally:
+        registry.REGISTRY.pop("mcp.rec.count_words", None)
+        mcp._state.pop("rec", None)
+    local_calls, sent[:] = list(sent), []
+    assert len(local_calls) == 5 and all(local and model != "lm-model" for local, model in local_calls)
+
+    list(answerer.chat_stream("hello"))
+    client.llm_json("make flashcards", local=False)  # what routes_study sends
+    assert sent == [(False, "lm-model"), (False, "lm-model")]
+    external.set(False)
+
+
+def test_with_the_other_server_on_the_local_model_is_still_protected_and_switchable(c, monkeypatch):
+    external.set(True, "http://127.0.0.1:1234/v1", "lm-model")
+    r = c.post("/models/remove", json={"name": "chat"}, headers=AUTH)
+    assert r.status_code == 400 and "in use" in r.json()["detail"]
+    monkeypatch.setattr(ovms_runner, "available_devices", lambda: ["CPU", "GPU"])
+    monkeypatch.setattr(ovms_runner, "restart", lambda wait=False: True)
+    monkeypatch.setattr(routes_models, "server_status", lambda: {"connected": True, "models": ["chat", "embed"]})
+    r = c.put("/models/device", json={"device": "CPU"}, headers=AUTH)
+    assert r.status_code == 200 and r.json()["device"] == "CPU"  # the local model's graph, not "lm-model"
+    models = {m["name"]: m for m in c.get("/models", headers=AUTH).json()["models"]}
+    assert models["chat"]["active"]
+    external.set(False)
+
+
+@pytest.mark.parametrize("bad", ["gpu2", "", "AUTO;rm", "tpu"])
+def test_an_unknown_device_is_refused_not_turned_into_auto(c, monkeypatch, bad):
+    monkeypatch.setattr(ovms_runner, "restart", lambda wait=False: pytest.fail("must not restart"))
+    r = c.put("/models/device", json={"device": bad}, headers=AUTH)
+    assert r.status_code == 400 and "Pick Auto, CPU, GPU or NPU" in r.json()["detail"]
+    assert prefs.get("ov_device") is None

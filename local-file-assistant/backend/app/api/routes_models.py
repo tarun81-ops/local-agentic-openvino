@@ -27,7 +27,7 @@ def expected_ram_mb(size_mb: int) -> int:
 def _entry(name: str, label: str, size_mb: int, kind: str, installed: bool, repo: str = "") -> dict:
     rec = routes_setup.recommended_chat(ram.status()["total_mb"])["repo"]
     return {"name": name, "label": label, "repo": repo, "size_mb": size_mb, "ram_mb": expected_ram_mb(size_mb), "kind": kind,
-            "installed": installed, "active": installed and name == current_model(),
+            "installed": installed, "active": installed and name == current_model(local=True),
             "recommended": kind == "chat" and bool(repo) and repo.split("/")[-1] == rec.split("/")[-1]}
 
 
@@ -62,7 +62,7 @@ def remove_model(req: NameRequest):
     have = routes_setup.installed()
     if req.name not in have:
         raise HTTPException(404, "That model isn't downloaded.")
-    if req.name == current_model() or req.name == settings.embedding_model:
+    if req.name == current_model(local=True) or req.name == settings.embedding_model:  # local: the other server's model isn't here
         raise HTTPException(400, "This model is in use. Switch to another model first (Use), then remove it.")
     def drop(cfg: dict) -> None:
         cfg["model_config_list"] = [e for e in cfg.get("model_config_list", []) if e.get("config", {}).get("name") != req.name]
@@ -85,11 +85,15 @@ _DEVICE_LINE = re.compile(r'(\bdevice:\s*")[A-Z.:,]+(")')
 def set_device(req: DeviceRequest):
     """Recompiles the chat model for another device: rewrites `device:` in its graph.pbtxt and restarts the OVMS the app
     started (a hand-started one has to be restarted by hand). The first start on a new device compiles the model."""
-    choice = req.device if req.device.upper() in ovms_runner.DEVICES else "auto"
+    choice = req.device.strip().upper()
+    if choice == "AUTO":
+        choice = "auto"
+    elif choice not in ovms_runner.DEVICES:  # a typo must not quietly become "auto"
+        raise HTTPException(400, f"“{req.device[:20]}” isn't a device the app knows. Pick Auto, CPU, GPU or NPU.")
     device = ovms_runner.resolve_device(choice)
     if device not in ovms_runner.available_devices():
         raise HTTPException(400, f"This PC has no {device} that OpenVINO can use.")
-    base = routes_setup.installed().get(current_model())
+    base = routes_setup.installed().get(current_model(local=True))
     if base is None:
         raise HTTPException(400, "The chat model isn't downloaded yet. Finish setup first.")
     graph = routes_setup.models_dir() / base / "graph.pbtxt"
@@ -103,7 +107,7 @@ def set_device(req: DeviceRequest):
             raise HTTPException(400, "This model's graph.pbtxt has no device line the app can change; download the model again from this page.")
         ovms_runner.write_atomic(graph, new)
         restarted = ovms_runner.restart(wait=True)
-        if restarted and current_model() not in server_status()["models"]:  # the new device didn't load it: the old file goes back
+        if restarted and current_model(local=True) not in server_status()["models"]:  # the new device didn't load it: the old file goes back
             ovms_runner.write_atomic(graph, text)
             ovms_runner.restart(wait=True)
             raise HTTPException(500, f"The chat model didn't start on {device}, so it is back on the device it had before. See logs\\ovms.log.")

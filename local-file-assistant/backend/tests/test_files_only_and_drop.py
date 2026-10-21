@@ -164,3 +164,17 @@ def test_keep_in_index(client, tmp_path, monkeypatch):
     secret = tmp_path / "id_rsa"
     secret.write_text("-----BEGIN KEY-----", encoding="utf-8")
     assert client.post("/files/keep", json={"path": str(secret)}, headers=AUTH).status_code == 400
+
+
+def test_only_the_dropped_files_actually_read_are_kept_for_follow_ups(client, monkeypatch, tmp_path):
+    from app.core.assistant import conversation
+
+    pdf = _corpus_pdf(tmp_path)
+    secret = tmp_path / ".env"
+    secret.write_text("API_TOKEN=abc123", encoding="utf-8")  # refused: never read
+    extra = [str(tmp_path / f"missing {i}.pdf") for i in range(5)]  # more than MAX_ATTACH, and not there
+    monkeypatch.setattr(routes_chat, "answer_stream", _cite_first)
+    ev = _ask(client, message="What is the invoice total?", attach=[str(pdf), str(secret), *extra], mode="files")
+    conv = next(d["id"] for k, d in ev if k == "conversation")
+    reply = [m for m in conversation.get(conv)["messages"] if m["role"] == "assistant"][-1]
+    assert reply["meta"]["attached"] == [str(pdf)]

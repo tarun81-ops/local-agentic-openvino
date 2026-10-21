@@ -117,7 +117,8 @@ def generate(req: StudyRequest):
     what, front = _KINDS[req.kind]
     context = "\n\n".join(f"[{i}] ({c['loc_kind']} {c['loc_no']})\n{c['text']}" for i, c in enumerate(chunks, 1))
     try:
-        data = client.llm_json(PROMPT.format(count=req.count, what=what, front=front, context=context), max_tokens=req.count * 90)
+        data = client.llm_json(PROMPT.format(count=req.count, what=what, front=front, context=context), max_tokens=req.count * 90,
+                               local=False)  # an answer-type feature: may use the other server (Settings says so)
     except Exception as exc:
         log.warning("study generation failed: %s", exc)
         raise HTTPException(502, f"The local model didn't answer: {exc}")

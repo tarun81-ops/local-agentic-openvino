@@ -81,7 +81,7 @@ def test_large_file_is_sampled_evenly_within_budget():
 def test_generate_returns_cleaned_cards_with_locations(client, indexed, monkeypatch):
     monkeypatch.setattr(routes_study.ram, "is_low", lambda: False)
     seen = {}
-    monkeypatch.setattr(routes_study.client, "llm_json", lambda p, max_tokens=300: seen.update(p=p) or {"items": [{"front": "Q1", "back": "A1", "src": 2}, {"front": "Q1", "back": "dup"}]})
+    monkeypatch.setattr(routes_study.client, "llm_json", lambda p, max_tokens=300, **k: seen.update(p=p) or {"items": [{"front": "Q1", "back": "A1", "src": 2}, {"front": "Q1", "back": "dup"}]})
     r = client.post("/study/generate", json={"path": str(FILE), "kind": "quiz", "count": 5}, headers=AUTH)
     body = r.json()
     assert r.status_code == 200 and body["items"] == [{"front": "Q1", "back": "A1", "loc_kind": "page", "loc_no": 2}]

@@ -33,7 +33,7 @@ export function render(container) {
         item(badge('YOU CLICK', 'outline'), `Downloading a model (setup and Settings > Model): from ${setup?.model?.source || 'the model site'}.`),
         item(on(updates?.enabled !== false), 'Once a day: asking github.com whether a new version exists. Nothing about you or your files is sent. Switch: Settings > General > Privacy.'),
         item(on(Boolean(ext?.enabled)), ext?.enabled
-          ? `Another server answers your chat: ${ext.url}. ${ext.loopback ? 'It is on this PC.' : 'It is NOT on this PC: your questions and the file text they use are sent there.'} Switch: Settings > General > Model.`
+          ? `Another server answers your chat: ${ext.url}. ${ext.loopback ? 'It is on this PC.' : 'It is NOT on this PC: your questions, flashcards and the text of the files they use are sent there.'} Switch: Settings > General > Model.`
           : 'Another OpenAI-compatible server (off): only if you switch it on in Settings > General > Model.'),
         item(badge('YOU ADD', 'outline'), 'Plug-in tools: programs you add yourself in Settings > Plug-in tools. A tool that changes things or sends data always asks first.'),
         ext?.enabled && !ext.loopback ? notice('Your questions are currently sent to a server on another computer.', 'error') : ''),

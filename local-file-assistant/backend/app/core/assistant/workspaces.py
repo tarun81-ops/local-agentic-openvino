@@ -3,6 +3,7 @@ the folders (routes_chat passes them down as `within`); a workspace with no fold
 only narrows what the app may already read: PC access and the never-opened rules still apply inside it."""
 import json
 import os
+import sqlite3
 import time
 from pathlib import Path
 
@@ -32,14 +33,24 @@ def clean(name: str, roots: list[str], answer_style: str) -> tuple[str, list[str
     return name, out, answer_style
 
 
+def _check_free(conn, name: str, ws_id: int | None = None) -> None:
+    """Names are unique ignoring case (migration 0012). casefold() here also covers non-ASCII letters, which SQLite's
+    lower() in that index doesn't fold."""
+    if any(r["name"].casefold() == name.casefold() for r in conn.execute("SELECT id, name FROM workspaces") if r["id"] != ws_id):
+        raise ValueError(f"There is already a workspace called “{name}”. Pick another name.")
+
+
 def create(name: str, roots: list[str], answer_style: str = "") -> dict:
     name, roots, answer_style = clean(name, roots, answer_style)
     conn = assistant_db.connect()
     try:
+        _check_free(conn, name)
         cur = conn.execute("INSERT INTO workspaces(name, roots_json, answer_style, created_at) VALUES (?, ?, ?, ?)",
                            (name, json.dumps(roots), answer_style, time.time()))
         conn.commit()
         return get(cur.lastrowid)
+    except sqlite3.IntegrityError:  # saved by another request at the same moment
+        raise ValueError(f"There is already a workspace called “{name}”. Pick another name.") from None
     finally:
         conn.close()
 
@@ -67,9 +78,12 @@ def update(ws_id: int, name: str, roots: list[str], answer_style: str = "") -> d
     name, roots, answer_style = clean(name, roots, answer_style)
     conn = assistant_db.connect()
     try:
+        _check_free(conn, name, ws_id)
         conn.execute("UPDATE workspaces SET name = ?, roots_json = ?, answer_style = ? WHERE id = ?",
                      (name, json.dumps(roots), answer_style, ws_id))
         conn.commit()
+    except sqlite3.IntegrityError:
+        raise ValueError(f"There is already a workspace called “{name}”. Pick another name.") from None
     finally:
         conn.close()
     return get(ws_id)

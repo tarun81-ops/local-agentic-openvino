@@ -1,9 +1,10 @@
 """Optional: answer with another OpenAI-compatible server (for example LM Studio on this PC) instead of the built-in
-engine. Off by default. Only chat goes there; file search, embeddings, image captions and the briefing always stay on
-this PC (get_client(local=True)).
+engine. Off by default. Only answers go there: questions, flashcards and the text of the files they use. File search,
+embeddings, image captions, the briefing, choosing which files to read and planning plug-in tools always stay on this
+PC (get_client(local=True), llm_json's default).
 
-A server that isn't on this PC (not a loopback address) receives every question and the file passages it is answered
-from, so switching one on needs an https:// address and a second, explicit confirmation (confirm_remote), and Settings
+A server that isn't on this PC (not a loopback address) receives questions, flashcards and the text of the files they
+use, so switching one on needs an https:// address and a second, explicit confirmation (confirm_remote), and Settings
 says so in words."""
 import ipaddress
 from urllib.parse import urlparse
@@ -42,8 +43,8 @@ def set(enabled: bool, url: str = "", model: str = "", confirm_remote: bool = Fa
             raise ValueError(f"{parsed.hostname} is not this PC, so its address must start with https:// "
                              "(with http:// your questions and file text would cross the network unencrypted).")
         if not is_loopback(url) and not confirm_remote:
-            raise ValueError(f"{parsed.hostname} is not this PC. Your questions and the text of the files they are "
-                             "answered from would be sent there. Confirm to use it anyway.")
+            raise ValueError(f"{parsed.hostname} is not this PC. Your questions, flashcards and the text of the files "
+                             "they use would be sent there. Confirm to use it anyway.")
     prefs.set(_KEY, {"enabled": bool(enabled), "url": url, "model": model})
     return get()
 
