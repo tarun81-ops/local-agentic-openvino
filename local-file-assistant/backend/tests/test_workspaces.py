@@ -1,12 +1,17 @@
 """Workspaces: chat search stays inside the workspace's folders (index search and the live file agent), chats are
 listed per workspace, existing chats land in "All files", and deleting a workspace never deletes a file."""
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api import routes_chat
+from app.config import settings
 from app.core import pc_access
 from app.core.assistant import conversation, file_agent, workspaces
+from app.core.search import fts_search, hybrid
 from app.core.search.hybrid import hybrid_search
+from app.db import sqlite_fts
 from app.main import app
 from tests.test_api import _add_and_wait
 
@@ -50,13 +55,14 @@ def test_index_search_is_limited_to_the_workspace_folders(client, two_folders):
     assert inside == {"college fee receipt.txt"}
 
 
-def test_a_small_workspace_in_a_big_index_still_gets_its_hits(client, tmp_path):
+def test_a_small_workspace_in_a_big_index_still_gets_its_hits(client, tmp_path, monkeypatch):
     """Filtering the top hits afterwards left such a workspace with none, and FILES ONLY then refused a question its
     own file answers."""
+    monkeypatch.setattr(hybrid, "RERANK_POOL", 2)  # a small pool, so a few dozen files crowd it (indexing 100 is slow)
     big, small = tmp_path / "Big", tmp_path / "Small"
     big.mkdir()
     small.mkdir()
-    for i in range(100):  # many stronger matches elsewhere, more than the widened search pool holds (4 x 20)
+    for i in range(40):  # many stronger matches elsewhere, more than the widened search pool holds (4 x 6 + 2)
         (big / f"zorbline report {i}.txt").write_text("zorbline " * 40 + f"report number {i}", encoding="utf-8")
     (small / "zorbline note.txt").write_text("one zorbline mention", encoding="utf-8")
     for folder in (big, small):
@@ -64,6 +70,20 @@ def test_a_small_workspace_in_a_big_index_still_gets_its_hits(client, tmp_path):
     assert not {r["name"] for r in hybrid_search("zorbline", limit=6)["results"]} & {"zorbline note.txt"}  # the pool is crowded
     inside = {r["name"] for r in hybrid_search("zorbline", limit=6, within=[str(small)])["results"]}
     assert inside == {"zorbline note.txt"}
+
+
+def test_a_workspace_folder_with_a_capital_non_ascii_letter_is_still_searched(client, tmp_path):
+    """SQLite's lower() only folds ASCII; the folder has to match the way pc_access.under compares (str.lower)."""
+    folder = tmp_path / "Ünal Notes"
+    folder.mkdir()
+    (folder / "zephyrine note.txt").write_text("zephyrine memo", encoding="utf-8")
+    assert _add_and_wait(client, folder)["state"] == "done"
+    conn = sqlite_fts.connect(settings.db_path)  # the keyword leg alone: the vector leg would find it anyway
+    try:
+        found = fts_search.search(conn, "zephyrine", limit=10, within=[str(folder)])
+    finally:
+        conn.close()
+    assert [Path(r["path"]).name for r in found] == ["zephyrine note.txt"]
 
 
 def test_the_file_agent_never_opens_files_outside_the_workspace(monkeypatch, two_folders):

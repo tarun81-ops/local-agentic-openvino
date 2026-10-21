@@ -31,16 +31,6 @@ def build_match(query: str) -> str | None:
     return " OR ".join('"' + t.replace('"', '""') + '"' for t in ts)
 
 
-# The stored path folded the way pc_access.under compares paths (case-insensitive, one slash style) on Windows.
-_PATH = "replace(lower(c.path), '/', '\\')" if os.name == "nt" else "c.path"
-
-
-def _inside(root: str) -> str:
-    """LIKE pattern (escape ^) for the files inside a folder. Prefix only: callers still check with pc_access.under."""
-    base = os.path.normcase(str(Path(root))).rstrip("\\/") + os.sep
-    return base.replace("^", "^^").replace("%", "^%").replace("_", "^_") + "%"
-
-
 def search(conn: sqlite3.Connection, query: str, limit: int = 8, root: str | None = None, skip_roots: list[str] | None = None,
            within: list[str] | None = None) -> list[dict]:
     """within: a workspace's folders. Filtered here, before the top `limit` are taken, so a workspace holding a small
@@ -62,9 +52,11 @@ def search(conn: sqlite3.Connection, query: str, limit: int = 8, root: str | Non
     elif skip_roots:  # e.g. whole-PC contents while PC access is off: excluded here so they can't crowd out real hits
         sql += f"AND f.root NOT IN ({','.join('?' * len(skip_roots))}) "
         args += skip_roots
-    if within:
-        sql += "AND (" + " OR ".join(f"{_PATH} LIKE ? ESCAPE '^'" for _ in within) + ") "
-        args += [_inside(r) for r in within]
+    # ponytail: a Python call per matched row (~2 µs: 0.2 s at 100k matches); a stored folder column if broad queries get slow.
+    if within:  # folded in Python like pc_access.under does: SQLite lower() is ASCII-only, so "Ünal" would never match "ünal"
+        bases = tuple(os.path.normcase(str(Path(r))).rstrip("\\/") + os.sep for r in within)
+        conn.create_function("in_workspace", 1, lambda path: os.path.normcase(path).startswith(bases))
+        sql += "AND in_workspace(c.path) "
     sql += "ORDER BY score LIMIT ?"
     args.append(limit)
     rows = conn.execute(sql, args).fetchall()

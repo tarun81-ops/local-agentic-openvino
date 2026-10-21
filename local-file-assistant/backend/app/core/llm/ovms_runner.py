@@ -48,7 +48,13 @@ def write_atomic(path: Path, text: str) -> None:
     tmp = path.with_name(path.name + ".tmp")
     try:
         tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, path)
+        for pause in (*[0.1] * 19, None):  # Windows refuses the swap while OVMS has the file open (it re-reads every second)
+            try:
+                return os.replace(tmp, path)
+            except PermissionError:
+                if pause is None:
+                    raise
+                time.sleep(pause)
     finally:
         tmp.unlink(missing_ok=True)
 

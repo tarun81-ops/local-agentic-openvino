@@ -1,7 +1,23 @@
 """The model server is started by the app when it isn't running (Windows), reused when it is, and a chat that
 finds it down says it is being started instead of a bare "Connection error"."""
+import os
+import threading
+
+import pytest
+
 from app.config import settings
 from app.core.llm import ovms_runner
+
+
+@pytest.mark.skipif(os.name != "nt", reason="only Windows refuses to replace a file another program has open")
+def test_write_atomic_waits_out_a_reader_that_has_the_file_open(tmp_path):
+    """OVMS re-reads config.json every second; a replace that lands while it has the file open must not fail."""
+    cfg = tmp_path / "config.json"
+    cfg.write_text("old", encoding="utf-8")
+    reader = open(cfg, encoding="utf-8")  # no delete sharing, like the server's own read
+    threading.Timer(0.3, reader.close).start()
+    ovms_runner.write_atomic(cfg, "new")
+    assert cfg.read_text(encoding="utf-8") == "new" and not cfg.with_name("config.json.tmp").exists()
 
 
 class FakeProc:
