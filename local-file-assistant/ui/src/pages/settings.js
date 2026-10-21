@@ -14,6 +14,7 @@ export function render(container, { onStatusChanged, navigate }) {
   const model = el('div', { class: 'box box-pad' }, el('div', { class: 'quiet' }, 'Loading…'));
   const flash = el('div');
   const toggle = el('input', { type: 'checkbox', id: 'launch-at-startup', class: 'toggle', role: 'switch' });
+  const updates = el('input', { type: 'checkbox', id: 'check-updates', class: 'toggle', role: 'switch' });
   const shortcut = el('span', { class: 'keys' });
   const shortcutInput = el('input', { type: 'text', class: 'shortcut-input', placeholder: 'e.g. Ctrl+Alt+Space', 'aria-label': 'New shortcut' });
   const shortcutSet = el('button', { type: 'button', class: 'btn btn-ink btn-sm' }, 'Set');
@@ -57,6 +58,8 @@ export function render(container, { onStatusChanged, navigate }) {
             { class: 'privacy' },
             el('div', { class: 'privacy-h' }, 'Private by design'),
             el('div', {}, 'Nothing you index or ask ever leaves this device. No cloud calls, no telemetry.'),
+            el('div', { class: 'kv kv-plain' }, el('label', { for: 'check-updates' }, 'Check for app updates once a day'), updates),
+            el('div', { class: 'quiet' }, 'Asks github.com whether a newer version exists. Nothing about you or your files is sent.'),
           ),
         ),
       ),
@@ -84,6 +87,12 @@ export function render(container, { onStatusChanged, navigate }) {
     if (!supported) toggle.title = 'Available in the installed app';
   });
   toggle.addEventListener('change', () => window.lfa.setLaunchAtStartup(toggle.checked));
+  window.lfa.updates().then(({ enabled, supported }) => {
+    updates.checked = enabled;
+    updates.disabled = !supported;
+    if (!supported) updates.title = 'Available in the installed app';
+  });
+  updates.addEventListener('change', () => window.lfa.setUpdates(updates.checked));
 
   // Morning briefing and nudges: each can be switched off, with quiet hours and a daily limit.
   async function loadProactive() {

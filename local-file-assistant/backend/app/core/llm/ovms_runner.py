@@ -24,8 +24,17 @@ _proc: subprocess.Popen | None = None
 _state = {"status": "unknown", "detail": ""}  # unknown | running | starting | missing | failed | off
 
 
+# The installer ships OVMS next to the frozen backend: resources\backend\lfa-backend.exe and resources\ovms\ovms.exe.
+BUNDLED_OVMS = Path(sys.executable).parent.parent / "ovms"
+
+
 def ovms_dir() -> Path:
-    return Path(settings.ovms_dir) if settings.ovms_dir else Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ovms"
+    """OVMS_DIR if set, else the copy the installer shipped, else %LOCALAPPDATA%\\ovms (a dev setup, docs/OPENVINO.md)."""
+    if settings.ovms_dir:
+        return Path(settings.ovms_dir)
+    if getattr(sys, "frozen", False) and (BUNDLED_OVMS / "ovms.exe").is_file():
+        return BUNDLED_OVMS
+    return Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ovms"
 
 
 def config_path() -> Path:

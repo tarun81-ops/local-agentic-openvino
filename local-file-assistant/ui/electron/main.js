@@ -562,6 +562,7 @@ if (!app.requestSingleInstanceLock()) {
       log(`Could not register ${label(voiceShortcut)}: another app is using it.`);
     }
     allowMicrophone();
+    require('./updates').start({ app, ipcMain, log, send: (ch, v) => mainWindow?.webContents.send(ch, v) });
   });
 
   app.on('before-quit', () => {

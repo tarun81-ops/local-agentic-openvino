@@ -73,7 +73,7 @@ export function render(container, { navigate, onStatusChanged }) {
       el('div', {}, 'Ask for any file by describing it, ask what is inside it, and get answers with the page they came from. Marks and totals are calculated in code, and the app checks a document is yours before it calls it yours.'),
       el('div', { class: 'privacy' },
         el('div', { class: 'privacy-h' }, 'What stays private'),
-        el('div', {}, 'Your questions and your files never leave this PC. There is no account and no telemetry. The only time the app uses the internet is when you click Download in the next steps, and it says where it downloads from first.')),
+        el('div', {}, 'Your questions and your files never leave this PC. There is no account and no telemetry. The app uses the internet only when you click Download in the next steps (it says where from first), and once a day to check for a new version of the app, which you can turn off in Settings → Privacy.')),
       el('div', { class: 'quiet' }, 'Nothing on your PC is moved, renamed or deleted unless you approve it.'),
     );
   }
@@ -147,7 +147,7 @@ export function render(container, { navigate, onStatusChanged }) {
     body.replaceChildren(
       el('h2', {}, 'Model'),
       el('div', {}, `Recommended ${rec.why}: `, el('strong', {}, rec.label), '.'),
-      el('div', { class: 'quiet' }, `Downloads from ${m.source}. This is the only step that uses the internet. What runs:`),
+      el('div', { class: 'quiet' }, `Downloads from ${m.source}. What runs:`),
       el('ul', { class: 'setup-needed' }, ...m.needed.map((n) =>
         el('li', {}, el('div', {}, `${n.label} — ${n.size_mb.toLocaleString()} MB`), el('code', { class: 'cmd' }, n.command)))),
       el('div', { class: 'row-gap' }, start, stop),

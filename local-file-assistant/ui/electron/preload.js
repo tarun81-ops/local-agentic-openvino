@@ -6,6 +6,11 @@ contextBridge.exposeInMainWorld('lfa', {
   config: () => ipcRenderer.invoke('app:config'),
   shortcut: () => ipcRenderer.invoke('app:shortcut'),
   pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
+  // Updates (electron/updates.js): {enabled, supported, ready}, switch on/off, restart into a downloaded update.
+  updates: () => ipcRenderer.invoke('updates:get'),
+  setUpdates: (enabled) => ipcRenderer.invoke('updates:set', Boolean(enabled)),
+  installUpdate: () => ipcRenderer.invoke('updates:install'),
+  onUpdateReady: (cb) => ipcRenderer.on('update:ready', (_e, version) => cb(version)),
   openLink: (url) => ipcRenderer.invoke('app:open-link', url), // only the download pages listed in main.js
   getLaunchAtStartup: () => ipcRenderer.invoke('app:get-login'),
   setLaunchAtStartup: (enabled) => ipcRenderer.invoke('app:set-login', enabled),

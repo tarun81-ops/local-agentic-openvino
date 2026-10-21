@@ -49,6 +49,17 @@ if ($model) {
   Write-Warning "No re-ranker model found; run scripts\setup.ps1 first to include it."
 }
 
+# OpenVINO build: the installer ships OpenVINO Model Server too (ui\package.json extraResources -> resources\ovms), so
+# nobody installs it separately. Models are not bundled: the setup wizard downloads them. OVMS_DIR picks another copy.
+$ovmsSrc = if ($env:OVMS_DIR) { $env:OVMS_DIR } else { Join-Path $env:LOCALAPPDATA "ovms" }
+if (-not (Test-Path (Join-Path $ovmsSrc "ovms.exe"))) { throw "ovms.exe not found in $ovmsSrc. Unzip the OVMS release there (docs\OPENVINO.md) or set OVMS_DIR." }
+$ovmsDst = "$root\backend\dist\ovms"
+if (Test-Path $ovmsDst) { Remove-Item $ovmsDst -Recurse -Force }
+robocopy $ovmsSrc $ovmsDst /E /NFL /NDL /NJH /NJS /NP | Out-Null
+if ($LASTEXITCODE -ge 8) { throw "Copying OVMS failed (robocopy $LASTEXITCODE)" }
+$LASTEXITCODE = 0
+Write-Host ("OVMS bundled: {0:N0} MB" -f ((Get-ChildItem $ovmsDst -Recurse -File | Measure-Object Length -Sum).Sum / 1MB))
+
 # 1. Secrets must never ship: .env holds the local API token and settings.
 $leaked = Get-ChildItem $dist -Recurse -Force -Include ".env", "api_token.txt", "*.db"
 if ($leaked) { throw "Refusing to ship secrets/data: $($leaked.FullName -join ', ')" }
@@ -85,6 +96,11 @@ try {
   if (-not $parsed.when -or $parsed.title -ne "Call mom") { throw "Date parsing failed in the frozen backend" }
   $voice = Invoke-RestMethod "http://127.0.0.1:$port/voice/status" -Headers $headers
   Write-Host "Assistant smoke test OK (conversations, memory, tasks, dates). Voice models present: stt=$($voice.stt.available) tts=$($voice.tts.available)"
+  # First-run setup answers (routes_setup.py was bundled) and says what a fresh PC is missing.
+  $setup = Invoke-RestMethod "http://127.0.0.1:$port/setup/status" -Headers $headers
+  if ($null -eq $setup.missing -or $setup.done) { throw "/setup/status is wrong in the frozen backend" }
+  if ($setup.engine.state -eq "missing") { throw "The frozen backend did not find the bundled OVMS (backend\dist\ovms)" }
+  Write-Host "Setup status OK. Engine: $($setup.engine.state). Missing: $($setup.missing -join ', ')"
   try { Invoke-RestMethod "http://127.0.0.1:$port/settings" | Out-Null; throw "API answered without a token" }
   catch { if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw } }
 } finally {

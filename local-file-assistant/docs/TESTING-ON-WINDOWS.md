@@ -81,10 +81,21 @@ Keep the `eval\results\*.json` file: it's the baseline to compare the next model
 `build-backend.ps1` refuses to ship `.env` or any index data, and starts the frozen backend
 once (health + token check) before electron-builder runs.
 
-- [ ] Install `ui\release\Local File Assistant Setup *.exe` on a Windows account with no Python.
+- [ ] Install `ui\release\LocalFileAssistant-OpenVINO-Setup-*.exe` on a **fresh Windows user with no Python and no OVMS**
+      (Settings > Accounts > Other users > Add account; `where python` finds nothing).
+- [ ] First launch opens SET UP. MODEL ENGINE says INSTALLED (OVMS came with the installer, nothing to download).
+- [ ] MODEL: DOWNLOAD shows progress, CANCEL stops it, DOWNLOAD again finishes; the engine then goes WARMING UP > READY
+      within a minute or two. FILES & PC ACCESS: turn on. TRY IT: an example question opens Chat and gets an answer.
+- [ ] Quit and start again: the wizard doesn't come back.
 - [ ] Repeat the checks in section 2 in the installed app.
 - [ ] Settings > LAUNCH AT STARTUP on, sign out and in: app starts in the tray.
 - [ ] Logs exist: `%APPDATA%\LocalFileAssistant\logs\backend.log` and `%APPDATA%\Local File Assistant\logs\main.log`.
+- [ ] Update from the previous version (docs/RELEASING.md): install release N, publish N+1, start N. Within a minute
+      "Update N+1 is ready" appears bottom right. LATER hides it and the app keeps running; quitting from the tray
+      installs it. Start again: Settings shows N+1, chats and settings are still there, the wizard doesn't come back.
+- [ ] Settings > Privacy > CHECK FOR APP UPDATES off: `%APPDATA%\Local File Assistant\updates.json` says
+      `"enabled":false`, the switch is still off after a restart, and with `"last"` set to 0 in that file and the app
+      restarted, `main.log` gets no update lines (no request to github.com).
 
 ## 4. Upgrading an old index
 

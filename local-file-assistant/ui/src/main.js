@@ -160,5 +160,17 @@ async function boot() {
   setInterval(refreshStatus, 30000);
 }
 
+// An update downloaded in the background (electron/updates.js): offer the restart, never restart by ourselves.
+function updateReady(version) {
+  if (!version || document.querySelector('.update-bar')) return;
+  const bar = el('div', { class: 'update-bar', role: 'status' },
+    el('span', {}, `Update ${version} is ready.`),
+    el('button', { type: 'button', class: 'btn btn-primary btn-sm', onclick: () => window.lfa.installUpdate() }, 'Restart now'),
+    el('button', { type: 'button', class: 'btn btn-outline btn-sm', onclick: () => bar.remove() }, 'Later'));
+  document.body.append(bar);
+}
+window.lfa.onUpdateReady(updateReady);
+window.lfa.updates().then((u) => updateReady(u?.ready)).catch(() => {});
+
 window.lfa.onNavigate((page) => show(page));
 boot();

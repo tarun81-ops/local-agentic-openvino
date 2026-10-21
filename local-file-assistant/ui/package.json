@@ -12,7 +12,8 @@
     "build:web": "vite build",
     "build:backend": "node -e \"require('child_process').execSync(process.platform==='win32'?'powershell -ExecutionPolicy Bypass -File ../scripts/build-backend.ps1':'bash ../scripts/build-backend.sh',{stdio:'inherit'})\"",
     "build": "npm run build:web && npm run build:backend && electron-builder --win nsis",
-    "build:linux": "npm run build:web && npm run build:backend && electron-builder --linux AppImage deb"
+    "build:linux": "npm run build:web && npm run build:backend && electron-builder --linux AppImage deb",
+    "test": "node --test tests/updates.test.js"
   },
   "build": {
     "appId": "com.local-file-assistant.app",
@@ -26,6 +27,10 @@
       {
         "from": "../backend/dist/lfa-backend",
         "to": "backend"
+      },
+      {
+        "from": "../backend/dist/ovms",
+        "to": "ovms"
       }
     ],
     "directories": {
@@ -38,7 +43,8 @@
     "nsis": {
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
-      "installerHeaderIcon": "build/icon.ico"
+      "installerHeaderIcon": "build/icon.ico",
+      "artifactName": "LocalFileAssistant-OpenVINO-Setup-${version}.${ext}"
     },
     "linux": {
       "target": [
@@ -49,12 +55,20 @@
       "icon": "build/icon.png",
       "maintainer": "Tarun Verma <tarunverma0119@gmail.com>",
       "synopsis": "Ask questions about your own files, privately and offline"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "tarun81-ops",
+        "repo": "local-agentic-openvino"
+      }
+    ]
   },
   "dependencies": {
     "@fontsource/archivo": "^5.3.0",
     "@fontsource/space-mono": "^5.3.0",
-    "chart.js": "^4.5.1"
+    "chart.js": "^4.5.1",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "concurrently": "^10.0.5",

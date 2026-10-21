@@ -72,3 +72,15 @@ def test_a_connection_error_in_chat_says_the_server_is_being_started(monkeypatch
     msg = routes_chat._model_error(ConnectionError("Connection error."))
     assert "starting it now" in msg and started
     assert routes_chat._model_error(ValueError("bad output")).startswith("The local model didn't answer")
+
+
+def test_the_installed_app_uses_the_ovms_it_ships(monkeypatch, tmp_path):
+    bundled = tmp_path / "resources" / "ovms"
+    bundled.mkdir(parents=True)
+    (bundled / "ovms.exe").write_bytes(b"")
+    monkeypatch.setattr(settings, "ovms_dir", "")
+    monkeypatch.setattr(ovms_runner, "BUNDLED_OVMS", bundled)
+    monkeypatch.setattr(ovms_runner.sys, "frozen", True, raising=False)
+    assert ovms_runner.ovms_dir() == bundled
+    monkeypatch.setattr(settings, "ovms_dir", str(tmp_path / "mine"))  # OVMS_DIR still wins
+    assert ovms_runner.ovms_dir() == tmp_path / "mine"
