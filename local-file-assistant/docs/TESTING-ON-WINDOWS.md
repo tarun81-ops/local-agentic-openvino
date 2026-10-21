@@ -90,14 +90,51 @@ once (health + token check) before electron-builder runs.
 - [ ] Repeat the checks in section 2 in the installed app.
 - [ ] Settings > LAUNCH AT STARTUP on, sign out and in: app starts in the tray.
 - [ ] Logs exist: `%APPDATA%\LocalFileAssistant\logs\backend.log` and `%APPDATA%\Local File Assistant\logs\main.log`.
-- [ ] Update from the previous version (docs/RELEASING.md): install release N, publish N+1, start N. Within a minute
-      "Update N+1 is ready" appears bottom right. LATER hides it and the app keeps running; quitting from the tray
-      installs it. Start again: Settings shows N+1, chats and settings are still there, the wizard doesn't come back.
+- [ ] Update from the previous version: section 4.
 - [ ] Settings > Privacy > CHECK FOR APP UPDATES off: `%APPDATA%\Local File Assistant\updates.json` says
       `"enabled":false`, the switch is still off after a restart, and with `"last"` set to 0 in that file and the app
       restarted, `main.log` gets no update lines (no request to github.com).
 
-## 4. Upgrading an old index
+## 4. Update from the previous version (no publishing)
+
+`scripts\test-update.ps1` serves `ui\release\` on 127.0.0.1 and starts the installed older build with
+`LFA_UPDATE_URL` pointing at it (honoured only for a loopback address, and only when set; a normal start never sets
+it). The older build must be 0.3.0 or newer: 0.2.0 doesn't know `LFA_UPDATE_URL` and would ask GitHub.
+
+1. Install the older build (for example `LocalFileAssistant-OpenVINO-Setup-0.3.0.exe`), start it once, index a folder, ask a question,
+   make a workspace. Quit from the tray.
+2. In `ui\package.json` set `"version"` one step higher (0.3.0 -> 0.3.1; don't commit it), then `cd ui; npm run build`.
+3. `powershell -ExecutionPolicy Bypass -File scripts\test-update.ps1`. It prints what to expect. Check:
+   - [ ] About 10 s after the window opens, `%APPDATA%\Local File Assistant\logs\main.log` says
+         `update test: checking http://127.0.0.1:8765/ instead of GitHub`, then `update 0.3.1 found`, then
+         `update 0.3.1 downloaded; waiting for Restart now`.
+   - [ ] Bottom right: "Update 0.3.1 is ready. Restart to install it?" with RESTART NOW and LATER. Nothing installs
+         or restarts by itself.
+   - [ ] LATER hides it; quitting from the tray does not install it.
+   - [ ] Run the script again, click RESTART NOW: the installer runs and the app comes back.
+   - [ ] Settings > General > Privacy says Version 0.3.1; chats, workspaces, indexed folders and settings are still
+         there; the setup wizard doesn't come back; models are not downloaded again.
+   - [ ] `%APPDATA%\LocalFileAssistant` holds `assistant.db.bak-<n>` only if the new version added a migration.
+4. Put `"version"` back.
+
+Off switch: Settings > General > Privacy > CHECK FOR APP UPDATES off, restart with the script: `main.log` has no
+`update test` / `update ... found` lines, and `updates.json` says `"enabled":false`.
+
+## 5. What only you can check (not covered by the automated tests)
+
+The update rules are tested with a stand-in for electron-updater (`ui\tests\updates.test.js`) and the backend
+with pytest; these need the real thing:
+
+- [ ] The real Electron window: section 2.
+- [ ] A real update with the loopback test: section 4.
+- [ ] 0.2.0 -> 0.3.0 for people who already have 0.2.0: only possible against the published release (0.2.0 has no
+      test switch). After publishing local-agentic-openvino 0.3.0, start a 0.2.0 install: within a minute the banner appears;
+      0.2.0's older updater also installs it when you quit (0.3.0 no longer does). Data and models stay.
+- [ ] A fresh Windows user with no Python (section 3): the installer works without dev tools.
+- [ ] SmartScreen: an unsigned installer shows "Windows protected your PC"; More info > Run anyway works. Signed
+      builds (docs/RELEASING.md step 2) should not warn after a while.
+
+## 6. Upgrading an old index
 
 Start the new version once with an index made by the old one: Index shows the folders being
 rebuilt on their own (QUEUED, then SCANNING), and search works when they finish.

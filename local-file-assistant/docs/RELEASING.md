@@ -13,7 +13,7 @@ On the Windows PC that builds releases, once: OVMS unpacked in `%LOCALAPPDATA%\o
 ```powershell
 cd ui
 # bump "version" in ui\package.json first (0.2.0 -> 0.3.0): the updater compares versions
-npm test           # the once-a-day update rule
+npm test           # the update rules (electron\updates.js)
 npm run build      # web UI, frozen backend + smoke test, OVMS copied in, NSIS installer
 ```
 
@@ -42,8 +42,22 @@ $env:GH_TOKEN = "<token>"
 npx electron-builder --win nsis --publish always
 ```
 
-This uploads the installer, `.blockmap` and `latest.yml` to a **draft** release named after the version. Open the
-repo's Releases page, add notes, and click Publish. Installed apps see it at their next daily check.
+This uploads the installer, `.blockmap` and `latest.yml` to a **draft** release named after the version (draft is
+electron-builder's default for GitHub). Open the repo's Releases page, paste the notes from
+`docs\releases\<version>.md`, and click Publish. Installed apps see it at their next daily check; drafts and
+prereleases are never offered to them.
 
-To test an update before users get it, keep the release a draft and follow "Update from the previous version" in
-docs/TESTING-ON-WINDOWS.md with a build that points at a test repo.
+The three files, if you prefer to upload them by hand to a draft release instead (no token in the shell):
+`ui\release\LocalFileAssistant-OpenVINO-Setup-<version>.exe`, `ui\release\LocalFileAssistant-OpenVINO-Setup-<version>.exe.blockmap` and
+`ui\release\latest.yml`. Upload all three: an installed app reads `latest.yml` first and refuses an installer
+whose SHA-512 doesn't match it.
+
+To test an update before users get it, follow "Update from the previous version" in docs/TESTING-ON-WINDOWS.md:
+`scripts\test-update.ps1` serves `ui\release\` on 127.0.0.1 to an installed older build, so nothing is published.
+
+What an update never touches: the index, `assistant.db`, `settings.json`, workspaces and downloaded models live in
+`%APPDATA%\LocalFileAssistant`, Electron's own files in `%APPDATA%\Local File Assistant`; the installer only
+replaces the program folder (`%LOCALAPPDATA%\Programs\Local File Assistant`), and the uninstaller keeps both data
+folders (`deleteAppDataOnUninstall: false`). Before a database migration runs, `assistant.db` is copied to
+`assistant.db.bak-<old schema version>` (the newest two are kept). Never change `appId` or `productName` in
+`ui\package.json`: they decide those folders, and changing them orphans every existing install.

@@ -83,3 +83,32 @@ def test_a_taken_workspace_name_is_refused_in_plain_words_ignoring_case(tmp_path
     with pytest.raises(ValueError, match="Pick another name"):
         workspaces.update(other["id"], "ünal notes", [])
     assert workspaces.update(first["id"], "ünal notes", [])["name"] == "ünal notes"  # renaming itself is fine
+
+
+def test_a_v10_database_is_copied_before_it_migrates_and_its_data_survives(tmp_path, monkeypatch):
+    import sqlite3
+
+    upgrade = _db_at(10, tmp_path, monkeypatch)
+    conn = assistant_db.connect()
+    conn.execute("INSERT INTO tool_runs(tool, args_json, risk, status, created_at) VALUES ('create_note', '{}', 'reversible', 'done', 1)")
+    conn.execute("INSERT INTO workspaces(name, created_at) VALUES ('College', 0)")
+    conn.commit()
+    conn.close()
+    for old in (7, 8):  # copies from earlier updates: only the newest two are kept
+        (tmp_path / f"assistant.db.bak-{old}").write_bytes(b"old")
+    upgrade()
+    assert assistant_db.migrate() >= 11
+    copy = sqlite3.connect(tmp_path / "assistant.db.bak-10")
+    try:
+        assert copy.execute("PRAGMA user_version").fetchone()[0] == 10
+        assert copy.execute("SELECT tool FROM tool_runs").fetchall() == [("create_note",)]
+    finally:
+        copy.close()
+    assert sorted(p.name for p in tmp_path.glob("assistant.db.bak-*")) == ["assistant.db.bak-10", "assistant.db.bak-8"]
+    conn = assistant_db.connect()
+    try:  # 0011 rebuilt tool_runs: the row is still there
+        assert [tuple(r) for r in conn.execute("SELECT tool, risk, status FROM tool_runs")] == [("create_note", "reversible", "done")]
+        assert [r[0] for r in conn.execute("SELECT name FROM workspaces")] == ["College"]
+    finally:
+        conn.close()
+    assert assistant_db.migrate() >= 11 and len(list(tmp_path.glob("assistant.db.bak-*"))) == 2  # nothing pending: no new copy

@@ -209,7 +209,7 @@ async function boot() {
 function updateReady(version) {
   if (!version || document.querySelector('.update-bar')) return;
   const bar = el('div', { class: 'update-bar', role: 'status' },
-    el('span', {}, `Update ${version} is ready.`),
+    el('span', {}, `Update ${version} is ready. Restart to install it?`),
     el('button', { type: 'button', class: 'btn btn-primary btn-sm', onclick: () => window.lfa.installUpdate() }, 'Restart now'),
     el('button', { type: 'button', class: 'btn btn-outline btn-sm', onclick: () => bar.remove() }, 'Later'));
   document.body.append(bar);

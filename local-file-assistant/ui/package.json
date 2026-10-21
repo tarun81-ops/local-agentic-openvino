@@ -1,6 +1,6 @@
 {
   "name": "local-file-assistant-ui",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "A desktop application for managing local files and directories.",
   "author": "tarun",
@@ -44,7 +44,8 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico",
-      "artifactName": "LocalFileAssistant-OpenVINO-Setup-${version}.${ext}"
+      "artifactName": "LocalFileAssistant-OpenVINO-Setup-${version}.${ext}",
+      "deleteAppDataOnUninstall": false
     },
     "linux": {
       "target": [
