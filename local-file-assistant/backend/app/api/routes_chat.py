@@ -342,7 +342,12 @@ def _model_error(exc: Exception) -> str:
     start it in the background and say so, instead of a bare "Connection error"."""
     from app.core.llm import ovms_runner
 
-    if "connect" not in str(exc).lower() and "refused" not in str(exc).lower():
+    text = str(exc).lower()
+    if getattr(exc, "status_code", None) == 404 or "definition with requested name is not found" in text:
+        # OVMS answers before its models are loaded (the first minute after a start), or the picked model isn't served.
+        return ("The model is still loading (the first start can take a minute). Ask again shortly. If this keeps "
+                "happening, open Settings > Model and click USE on an installed model.")
+    if "connect" not in text and "refused" not in text:
         return f"The local model didn't answer: {exc}"
     before = ovms_runner.status()["status"]
     ovms_runner.ensure_running_async()

@@ -55,3 +55,11 @@ def test_summarize_retrieval_splits_by_kind_and_file_type():
     assert s["hybrid"] == {"n": 2, "hit1": 0.5, "in_context": 0.5, "rr": 0.5}
     assert s["hybrid/keyword"]["hit1"] == 1.0 and s["hybrid/paraphrase"]["hit1"] == 0.0
     assert s["hybrid/pdf+office"] == {"n": 1, "hit1": 1.0, "in_context": 1.0, "rr": 1.0}
+
+
+def test_the_apps_own_files_only_refusal_counts_as_refused():
+    from app.api.routes_chat import FILES_ONLY_REFUSAL
+    from eval.run_eval import score
+
+    s = score({"q": "x", "no_answer": True}, FILES_ONLY_REFUSAL, [], {"citations": [], "all_verified": False})
+    assert s["refused"] and s["correct"]

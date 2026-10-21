@@ -32,7 +32,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 BACKEND = HERE.parent
-REFUSAL_RE = re.compile(r"\b(not (found|mentioned|contain|include|provide|available)|no (information|mention)|doesn't|does not|don't|do not|cannot|can't|unable)\b", re.I)
+REFUSAL_RE = re.compile(r"\b(not (found|mentioned|contain|include|provide|available)|no (information|mention)|doesn't|does not|don't|do not|cannot|can't|couldn't|could not|unable)\b", re.I)
 
 
 def score(item: dict, answer: str, chunks: list[dict], verdict: dict) -> dict:
@@ -209,7 +209,8 @@ def main() -> int:
     args = ap.parse_args()
 
     tmp = Path(tempfile.mkdtemp(prefix="lfa-eval-"))
-    os.environ.update({"DATA_DIR": str(tmp), "DB_PATH": str(tmp / "index.db"), "VECTOR_DB_DIR": str(tmp / "lancedb"), "ASSISTANT_DB_PATH": str(tmp / "assistant.db"), "API_TOKEN": "eval"})
+    os.environ.update({"DATA_DIR": str(tmp), "DB_PATH": str(tmp / "index.db"), "VECTOR_DB_DIR": str(tmp / "lancedb"), "ASSISTANT_DB_PATH": str(tmp / "assistant.db"), "API_TOKEN": "eval",
+                       "STORE_FILE_TEXT": "true"})  # the eval measures the index pipeline; names-only would index nothing
     sys.path.insert(0, str(BACKEND))
     if args.retrieval:
         return run_retrieval(args, tmp)
@@ -252,6 +253,8 @@ def main() -> int:
                 answer += delta
         except Exception as exc:
             answer = f"[error: {exc}]"
+        if not chunks:  # what the app says when nothing matches (no_results); a refusal, not an empty answer
+            answer = "No information in your files matches this."
         total = time.perf_counter() - start
         free = ram.status()["free_mb"]
         if free is not None:

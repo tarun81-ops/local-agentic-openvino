@@ -925,3 +925,6 @@ body.overlay.overlay-compact .mark-overlay, body.overlay.overlay-compact .overla
 /* ---------- Settings > Plug-in tools (pages/plugins.js) ---------- */
 .mcp-tools { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .mcp-tool { display: grid; gap: 3px; }
+
+.privacy-item { align-items: flex-start; flex-wrap: nowrap; }
+.privacy-item .badge { flex-shrink: 0; }

@@ -272,3 +272,13 @@ def test_J_not_mine_re_asks_without_that_file(chat, tmp_path):
     chat("what is my class 12 roll no.", model_reply="Your roll number is 12626405 (12th.pdf, page 1).", results=first)
     reply, done, _ = chat("this is not mine", model_reply="Your roll number is 7777777 (krish22 12 result.pdf, page 1).")
     assert all(c["path"] != str(a) for c in chat.state["chunks"])
+
+
+def test_a_model_that_is_still_loading_is_said_in_plain_words():
+    from app.api import routes_chat
+
+    class NotFound(Exception):
+        status_code = 404
+
+    msg = routes_chat._model_error(NotFound("Error code: 404 - {'error': 'Mediapipe graph definition with requested name is not found'}"))
+    assert "still loading" in msg and "Mediapipe" not in msg and "404" not in msg
