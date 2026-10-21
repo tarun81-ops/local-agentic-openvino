@@ -65,14 +65,25 @@ jobs:
           if (-not $exe) { throw "ovms.exe not found in the OVMS download" }
           "OVMS_DIR=$($exe.DirectoryName)" >> $env:GITHUB_ENV
 
-      - name: Build the installer (web UI, frozen backend with smoke test, NSIS)
+      - name: Install UI packages and run the update tests
         working-directory: local-file-assistant/ui
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # unsigned build
         run: |
           npm ci
           npm test
-          npm run build
+
+      - name: Build the web UI
+        working-directory: local-file-assistant/ui
+        run: npm run build:web
+
+      - name: Freeze the backend (PyInstaller, bundles OVMS, smoke test)
+        working-directory: local-file-assistant/ui
+        run: npm run build:backend
+
+      - name: Build the installer (unsigned; publishing is done by the last step, not by electron-builder)
+        working-directory: local-file-assistant/ui
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --win nsis --publish never
 
       - name: List what was built
         working-directory: local-file-assistant/ui/release
