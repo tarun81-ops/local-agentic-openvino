@@ -83,7 +83,7 @@ export function render(container, { navigate, onStatusChanged }) {
     const tone = e.state === 'ready' ? 'blue' : e.ok ? 'outline' : 'red';
     body.replaceChildren(
       el('h2', {}, e.name),
-      el('div', { class: 'row-gap', role: 'status' }, badge(e.state.toUpperCase(), tone), e.state === 'ready' ? el('span', {}, 'Running on this PC.') : ''),
+      el('div', { class: 'row-gap', role: 'status' }, badge(e.state.charAt(0).toUpperCase() + e.state.slice(1), tone), e.state === 'ready' ? el('span', {}, 'Running on this PC.') : ''),
       e.detail ? notice(e.detail, e.ok ? 'neutral' : 'error') : '',
       el('div', { class: 'row-gap' },
         e.help ? button(e.help.label, () => window.lfa.openLink(e.help.url), 'btn-primary') : '',
@@ -99,7 +99,7 @@ export function render(container, { navigate, onStatusChanged }) {
     if (!m.needed.length) {
       body.replaceChildren(
         el('h2', {}, 'Model'),
-        el('div', { class: 'row-gap' }, badge('READY', 'blue'), el('span', {}, `Installed: ${m.installed.join(', ')}`)),
+        el('div', { class: 'row-gap' }, badge('Ready', 'blue'), el('span', {}, `Installed: ${m.installed.join(', ')}`)),
         el('div', { class: 'quiet' }, `Recommended ${rec.why}: ${rec.label}.`),
       );
       return;

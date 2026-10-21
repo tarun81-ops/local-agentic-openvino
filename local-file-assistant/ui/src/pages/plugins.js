@@ -57,7 +57,7 @@ export function render(container) {
         run(() => api.patchMcpServer(s.name, { writes: own.filter(asks).map((x) => x.name), reads: own.filter((x) => !asks(x)).map((x) => x.name) }), '');
       });
       return el('li', { class: 'mcp-tool' },
-        el('div', { class: 'row-gap' }, el('span', { class: 'mono' }, t.name), t.write ? badge('ASKS FIRST', 'red-outline') : badge('READ-ONLY', 'outline')),
+        el('div', { class: 'row-gap' }, el('span', { class: 'mono' }, t.name), t.write ? badge('Asks first', 'red-outline') : badge('Read-only', 'outline')),
         t.description ? el('div', { class: 'quiet' }, t.description) : '',
         el('label', { class: 'row-gap quiet' }, ask, t.server_says_write ? ' Changes things (the server says so), always asks' : ' Asks before running'));
     });

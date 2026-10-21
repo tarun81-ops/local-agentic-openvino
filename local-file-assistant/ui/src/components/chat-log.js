@@ -51,7 +51,7 @@ const ACTION_DONE = { open_path: 'Opened', open_app: 'Opened', create_note: 'Not
 /** The approval card for an action on this PC. The lines are exactly what will happen; nothing runs before APPROVE. */
 function toolCard(p) {
   return actionCard({
-    title: ACTION_TITLE[p.tool] || p.tool.toUpperCase(),
+    title: ACTION_TITLE[p.tool] || p.tool,
     lines: p.lines,
     confirmLabel: 'Approve',
     onConfirm: async () => {

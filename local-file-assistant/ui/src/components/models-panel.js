@@ -27,10 +27,10 @@ export function modelsPanel({ onChanged }) {
 
   function row(m, data) {
     const tags = [
-      m.active ? badge('IN USE', 'blue') : '',
-      m.recommended ? badge('RECOMMENDED FOR YOUR PC', 'outline') : '',
-      m.kind === 'embed' ? badge('SEARCH', 'outline') : '',
-      !m.installed && m.ram_mb > data.memory.total_mb * 0.5 ? badge('NEEDS MORE RAM', 'red-outline') : '',
+      m.active ? badge('In use', 'blue') : '',
+      m.recommended ? badge('Recommended for your PC', 'outline') : '',
+      m.kind === 'embed' ? badge('Search', 'outline') : '',
+      !m.installed && m.ram_mb > data.memory.total_mb * 0.5 ? badge('Needs more RAM', 'red-outline') : '',
     ];
     const line = el('div', { class: 'quiet', role: 'status' });
     const actions = el('div', { class: 'row-gap' });
