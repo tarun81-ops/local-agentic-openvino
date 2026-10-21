@@ -1,0 +1,3 @@
+# Repo root: local scratch output and the Ollama worktree that sits inside this folder (it has its own branch).
+Claude outputs/
+lfa-ollama-fix/
