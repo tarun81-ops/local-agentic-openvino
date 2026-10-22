@@ -17,7 +17,7 @@
   },
   "build": {
     "appId": "com.local-file-assistant.app",
-    "productName": "Local File Assistant",
+    "productName": "Lumi AI",
     "files": [
       "electron/**/*",
       "dist/**/*",
@@ -44,7 +44,7 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico",
-      "artifactName": "LocalFileAssistant-OpenVINO-Setup-${version}.${ext}",
+      "artifactName": "LumiAI-OpenVINO-Setup-${version}.${ext}",
       "deleteAppDataOnUninstall": false
     },
     "linux": {

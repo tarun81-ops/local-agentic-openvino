@@ -47,7 +47,7 @@ test('each build only looks at its own repo', () => {
   const openvino = build.nsis.artifactName.includes('OpenVINO');
   assert.deepEqual(build.publish.map((p) => [p.provider, p.owner, p.repo]), [['github', 'tarun81-ops', openvino ? 'local-agentic-openvino' : 'local-agentic']]);
   assert.equal(build.appId, 'com.local-file-assistant.app'); // changing it would orphan existing installs and their data
-  assert.equal(build.productName, 'Local File Assistant');
+  assert.equal(build.productName, 'Lumi AI');
   assert.equal(build.nsis.deleteAppDataOnUninstall, false);
 });
 

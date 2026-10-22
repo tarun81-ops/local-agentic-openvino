@@ -170,12 +170,12 @@ function show(page, { chatId, prefill } = {}) {
 
 async function boot() {
   drawSidebar();
-  const title = [...'Local File Assistant'].map((ch, i) => el('span', { style: `--i:${i}` }, ch));
+  const title = [...'Lumi AI'].map((ch, i) => el('span', { style: `--i:${i}` }, ch));
   content.replaceChildren(
     el('div', { class: 'boot splash' },
       el('div', { class: 'splash-burst', 'aria-hidden': 'true' }),
       mascot({ size: 132, mood: 'listening', label: 'Lumi, your local file assistant' }),
-      el('div', { class: 'splash-title', role: 'heading', 'aria-level': '1', 'aria-label': 'Local File Assistant' }, title),
+      el('div', { class: 'splash-title', role: 'heading', 'aria-level': '1', 'aria-label': 'Lumi AI' }, title),
       el('div', { class: 'splash-sub' }, 'Starting the local backend… the first start can take a minute'),
     ),
   );

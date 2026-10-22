@@ -17,9 +17,9 @@ $py = Join-Path $root "backend\.venv\Scripts\python.exe"
 $log = Join-Path $env:APPDATA "Local File Assistant\logs\main.log"
 
 if (-not (Test-Path (Join-Path $release "latest.yml"))) { throw "No ui\release\latest.yml. Build the new version first: cd ui; npm run build" }
-if (-not (Test-Path $App)) { throw "The installed app wasn't found at $App. Install the older build first, or pass -App <path to Local File Assistant.exe>." }
+if (-not (Test-Path $App)) { throw "The installed app wasn't found at $App. Install the older build first, or pass -App <path to Lumi AI.exe>." }
 if (-not (Test-Path $py)) { throw "No Python at $py. Run scripts\setup.ps1 first." }
-if (Get-Process "Local File Assistant" -ErrorAction SilentlyContinue) { throw "Local File Assistant is running. Quit it from the tray first (the update test needs a fresh start)." }
+if (Get-Process "Lumi AI" -ErrorAction SilentlyContinue) { throw "Lumi AI is running. Quit it from the tray first (the update test needs a fresh start)." }
 
 $new = (Select-String -Path (Join-Path $release "latest.yml") -Pattern '^version:\s*(.+)$').Matches[0].Groups[1].Value.Trim()
 Write-Host "Serving ui\release\ (version $new) on http://127.0.0.1:$Port/ (this PC only)"
