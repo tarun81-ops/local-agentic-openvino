@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     # OVMS_DIR is where the OVMS release zip was unpacked; empty = %LOCALAPPDATA%\ovms.
     ovms_autostart: bool = True
     ovms_dir: str = ""
+    ovms_startup_timeout_s: int = 300
     # Sampling for every chat request (a request may override). The model's own generation_config holds
     # Qwen3's thinking-mode values; Qwen recommends these for non-thinking mode, never greedy decoding, and a
     # presence penalty against the repetition loops small int4 models fall into.

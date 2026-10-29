@@ -379,17 +379,31 @@ export function render(container, { onStatusChanged, navigate }) {
   loadVoice();
   loadProactive();
 
+  let connectionTimer;
+  let disposed = false;
   async function load() {
     try {
       const s = await api.settings();
+      const auto = s.server.autostart || {};
+      const ready = s.server.connected && s.server.required_model_available;
+      const connection = ready
+        ? el('span', { class: 'conn' }, el('span', { class: 'status-dot' }), 'Connected')
+        : el(
+            'span',
+            { class: 'conn conn-off' },
+            s.server.connected
+              ? `Connected, but selected model "${s.server.required_model}" is not available`
+              : auto.status === 'starting'
+                ? `Starting OpenVINO Model Server: ${auto.detail}`
+                : auto.status === 'failed' || auto.status === 'missing'
+                  ? `OpenVINO startup failed: ${auto.detail}`
+                  : auto.status === 'off'
+                    ? `${auto.detail}. Start it with scripts\\ovms-start.ps1, then check again`
+                    : 'OpenVINO Model Server is not responding yet',
+          );
       model.replaceChildren(
         kv('Base URL', el('span', { class: 'mono' }, s.base_url)),
-        kv(
-          'Connection',
-          s.server.connected
-            ? el('span', { class: 'conn' }, el('span', { class: 'status-dot' }), 'Connected')
-            : el('span', { class: 'conn conn-off' }, 'Not running — start OpenVINO Model Server (scripts\\ovms-start.ps1), then reopen this page'),
-        ),
+        kv('Connection', connection),
         kv('File types', el('span', { class: 'mono' }, s.file_types.join('  '))),
         kv('Data folder', el('span', { class: 'mono' }, s.data_dir)),
         s.memory?.free_mb != null
@@ -406,8 +420,14 @@ export function render(container, { onStatusChanged, navigate }) {
       );
     } catch (e) {
       model.replaceChildren(notice(e.message, 'error'));
+    } finally {
+      if (!disposed) connectionTimer = setTimeout(load, 3000);
     }
   }
   load();
-  return () => models.dispose(); // stop following a download when you leave the page (it keeps running)
+  return () => {
+    disposed = true;
+    clearTimeout(connectionTimer);
+    models.dispose(); // stop following a download when you leave the page (it keeps running)
+  };
 }

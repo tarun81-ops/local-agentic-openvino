@@ -31,6 +31,10 @@
       {
         "from": "../backend/dist/ovms",
         "to": "ovms"
+      },
+      {
+        "from": "../scripts/ovms-start.ps1",
+        "to": "scripts/ovms-start.ps1"
       }
     ],
     "directories": {

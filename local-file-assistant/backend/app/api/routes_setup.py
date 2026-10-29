@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from app.config import settings
 from app.core import pc_access, prefs, ram
 from app.core.llm import ovms_runner
-from app.core.llm.client import server_status
+from app.core.llm.client import current_model, server_status, set_model
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/setup", tags=["setup"])
@@ -125,8 +125,16 @@ def engine() -> dict:
     if not installed():  # checked first: OVMS can't run without models, and asking a closed port costs ~2 s on Windows
         return {"name": "OpenVINO Model Server", "state": "installed", "ok": True,
                 "detail": "Installed. It starts once the models are downloaded (next step)."}
-    if server_status()["connected"]:
+    probe = server_status()
+    if probe["connected"] and probe["required_model_available"]:
         return {"name": "OpenVINO Model Server", "state": "ready", "ok": True, "detail": ""}
+    if probe["connected"]:
+        return {
+            "name": "OpenVINO Model Server",
+            "state": "failed",
+            "ok": False,
+            "detail": f"OVMS responds, but the selected model '{probe['required_model']}' is not available. Check the model repository and config.json.",
+        }
     run = ovms_runner.status()
     state = {"running": "ready", "starting": "warming up", "failed": "failed", "missing": "failed", "off": "off"}.get(run["status"], "starting")
     if state == "off":
@@ -205,8 +213,31 @@ def _run(items: list[dict]) -> None:
                 return
             _add_to_config(item["name"], str(Path(item["repo"])))
             done_mb += item["size_mb"]
-        _job.update(status="done", mb=total, total_mb=total, percent=100, detail="Downloaded. Starting the model server.")
-        ovms_runner.ensure_running_async()
+        chat_items = [item for item in items if item["name"] != settings.embedding_model]
+        if chat_items:
+            set_model(chat_items[-1]["name"])
+        _job.update(
+            phase="starting",
+            mb=total,
+            total_mb=total,
+            percent=100,
+            detail=f"Downloaded. Starting OpenVINO and loading {current_model(local=True)}…",
+        )
+        ready = ovms_runner.ensure_running()
+        if ready["status"] == "running":
+            _job.update(
+                status="done",
+                phase="ready",
+                detail=f"{current_model(local=True)} is ready in OpenVINO. You can start chatting.",
+            )
+        else:
+            _job.update(
+                status="failed",
+                phase="failed",
+                detail=(
+                    f"The model downloaded, but OpenVINO couldn't load it. {ready.get('detail') or 'Check Settings > Model & backend and try again.'}"
+                ),
+            )
     except Exception as exc:
         log.exception("model download failed")
         _job.update(status="failed", detail=f"The download stopped: {exc}. Click Download to try again.")
@@ -226,7 +257,7 @@ def start_pull(items: list[dict] | None = None) -> dict:
             return dict(_job)
         _cancel.clear()
         _job.clear()
-        _job.update(status="running", percent=0, mb=0, total_mb=sum(i["size_mb"] for i in items), detail="starting")
+        _job.update(status="running", phase="downloading", percent=0, mb=0, total_mb=sum(i["size_mb"] for i in items), detail="starting")
         threading.Thread(target=_run, args=(items,), name="model-pull", daemon=True).start()
         return dict(_job)
 

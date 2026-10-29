@@ -99,7 +99,10 @@ export function render(container, { navigate, onStatusChanged }) {
     if (!m.needed.length) {
       body.replaceChildren(
         el('h2', {}, 'Model'),
-        el('div', { class: 'row-gap' }, badge('Ready', 'blue'), el('span', {}, `Installed: ${m.installed.join(', ')}`)),
+        el('div', { class: 'row-gap' },
+          badge(status.engine.state === 'ready' ? 'Ready' : 'Downloaded', status.engine.state === 'ready' ? 'blue' : 'outline'),
+          el('span', {}, `Installed: ${m.installed.join(', ')}`)),
+        status.engine.state !== 'ready' ? notice(status.engine.detail || 'OpenVINO is still starting. It will be ready automatically.', status.engine.state === 'failed' ? 'error' : 'neutral') : '',
         el('div', { class: 'quiet' }, `Recommended ${rec.why}: ${rec.label}.`),
       );
       return;
@@ -119,7 +122,8 @@ export function render(container, { navigate, onStatusChanged }) {
       bar.setAttribute('aria-valuenow', String(pct));
       const which = s.model ? `${s.model}${s.steps > 1 ? ` (${s.step} of ${s.steps})` : ''} — ` : '';
       const size = s.total_mb ? ` · ${(s.mb || 0).toLocaleString()} of ${s.total_mb.toLocaleString()} MB` : '';
-      line.textContent = `${which}${pct}%${size}`;
+      line.textContent = s.phase === 'starting' ? s.detail : `${which}${pct}%${size}`;
+      stop.hidden = s.phase === 'starting';
     }
 
     function end(s, ok) {
@@ -147,9 +151,9 @@ export function render(container, { navigate, onStatusChanged }) {
     body.replaceChildren(
       el('h2', {}, 'Model'),
       el('div', {}, `Recommended ${rec.why}: `, el('strong', {}, rec.label), '.'),
-      el('div', { class: 'quiet' }, `Downloads from ${m.source}. What runs:`),
+      el('div', { class: 'quiet' }, `Downloads from ${m.source}. The model then starts automatically with OpenVINO and stays on this PC. First startup may take a few minutes while the model loads.`),
       el('ul', { class: 'setup-needed' }, ...m.needed.map((n) =>
-        el('li', {}, el('div', {}, `${n.label} — ${n.size_mb.toLocaleString()} MB`), el('code', { class: 'cmd' }, n.command)))),
+        el('li', {}, el('div', {}, `${n.label} — ${n.size_mb.toLocaleString()} MB`)))),
       el('div', { class: 'row-gap' }, start, stop),
       out,
     );
