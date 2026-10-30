@@ -5,7 +5,15 @@ on the Core Ultra's NPU, integrated GPU or CPU. Ollama is gone from this branch 
 lives on `main`). Design and decisions: [OPENVINO-DESIGN.md](OPENVINO-DESIGN.md) and
 [decisions/0002-openvino-only.md](decisions/0002-openvino-only.md).
 
-## 1. Install OVMS (once)
+The packaged Windows installer bundles OVMS. On first launch it creates/repairs the default model config, downloads
+the chat and embedding models into `%APPDATA%\LocalFileAssistant\ovms\models`, starts OVMS in the background, and
+keeps the chat screen on a setup status until `/v3` reports the selected model ready. Failed downloads and startup
+are logged to `%APPDATA%\LocalFileAssistant\logs\backend.log` and `%APPDATA%\LocalFileAssistant\logs\ovms.log`
+and retried automatically. No separate OVMS or model setup is needed for the installed app.
+
+The steps below are for running the app from source (`npm run dev`) or replacing the bundled OVMS copy.
+
+## 1. Install OVMS for development (once)
 
 Install the Microsoft Visual C++ Redistributable (aka.ms/vs/17/release/VC_redist.x64.exe), then download
 the Windows package **with Python** into your user folder (no admin rights needed; `C:\` itself is not
@@ -39,7 +47,7 @@ The models are saved in `%APPDATA%\LocalFileAssistant\ovms\models` under the nam
 
 ## 3. Start OVMS
 
-**The app now starts OVMS by itself** (Windows): when the backend starts and OVMS isn't answering, it runs
+**The backend starts OVMS by itself** (Windows): when it isn't answering and models are already configured, it runs
 `%LOCALAPPDATA%\ovms\ovms.exe` hidden in the background with the flags below, and stops it when the app closes.
 Its output goes to `%APPDATA%\LocalFileAssistant\logs\ovms.log`. Set `OVMS_AUTOSTART=false` in `backend\.env` to
 start it yourself, or `OVMS_DIR=` if you unpacked OVMS somewhere else. To start it by hand:
@@ -99,4 +107,3 @@ embedding models don't match.
   set `OV_BASE_URL=http://127.0.0.1:8000/v1`.
 - **NPU:** `OpenVINO/Qwen3-1.7B-int4-ov` is INT4 asymmetric (group 128) and is not NPU-compatible; an NPU model needs
   symmetric INT4, ratio 1.0, group size -1, and handles one request at a time.
-

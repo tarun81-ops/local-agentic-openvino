@@ -1,4 +1,6 @@
 import logging
+import os
+import sys
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 
@@ -38,7 +40,10 @@ _setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     assistant_db.migrate()
-    ovms_runner.ensure_running_async()  # the model server, so no terminal has to stay open; never delays startup
+    if sys.platform == "win32" and os.environ.get("LFA_ELECTRON_PACKAGED") == "1" and settings.ovms_autostart:
+        routes_setup.start_bootstrap()
+    else:
+        ovms_runner.ensure_running_async()  # dev keeps its existing behavior; never delays API startup
     mcp.start_background()  # plug-in tool servers, in a thread: a broken one must not hold up startup or the first chat
     watcher.start()
     # Memories come only from "remember that ..." in chat. Facts the model used to guess from chats

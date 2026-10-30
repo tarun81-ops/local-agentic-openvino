@@ -3,8 +3,8 @@
 OpenVINO build: the engine is OpenVINO Model Server (core/llm/ovms_runner.py). Models come from OVMS's own
 `ovms --pull`, which fetches a pre-converted OpenVINO model from Hugging Face by name, so no Python export step
 is needed (scripts\\ovms-export.ps1 stays for models that have no OpenVINO build). The pulled models are put in
-config.json under the names "chat" and "embed", the app's defaults. The download only starts when the user
-clicks it; the wizard shows where it downloads from and the exact command first."""
+config.json under the names "chat" and "embed", the app's defaults. The packaged Windows app starts this same
+download automatically on first launch; the setup page can also start it manually."""
 from __future__ import annotations
 
 import json
@@ -71,11 +71,12 @@ def _config() -> dict:
 
 
 def installed() -> dict[str, str]:
-    """{name: base_path} of the models in config.json whose folder exists. Works while OVMS is down."""
+    """{name: base_path} of the models in config.json with an OVMS graph file. Works while OVMS is down."""
     out = {}
     for entry in _config().get("model_config_list", []):
         c = entry.get("config", {})
-        if c.get("name") and c.get("base_path") and (models_dir() / c["base_path"]).is_dir():
+        model_path = models_dir() / c.get("base_path", "")
+        if c.get("name") and c.get("base_path") and (model_path / "graph.pbtxt").is_file():
             out[c["name"]] = c["base_path"]
     return out
 
@@ -149,6 +150,9 @@ _lock = threading.Lock()
 _job: dict = {"status": "idle"}  # idle | running | done | failed | cancelled
 _proc: subprocess.Popen | None = None
 _cancel = threading.Event()
+_bootstrap_lock = threading.Lock()
+_bootstrap_thread: threading.Thread | None = None
+_bootstrap: dict = {"status": "idle", "detail": ""}
 
 
 def _mb(path: Path) -> int:
@@ -262,6 +266,111 @@ def start_pull(items: list[dict] | None = None) -> dict:
         return dict(_job)
 
 
+def _ensure_default_config() -> None:
+    """Create the default aliases on a fresh install; setup/download keeps their paths in sync afterward."""
+    path = ovms_runner.config_path()
+    chat = recommended_chat(ram.status()["total_mb"])
+    with ovms_runner.config_lock:
+        try:
+            original = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            original = {}
+        cfg = dict(original) if isinstance(original, dict) else {}
+        entries = cfg.get("model_config_list", [])
+        if not isinstance(entries, list):
+            entries = []
+        entries = [
+            entry for entry in entries
+            if isinstance(entry, dict)
+            and isinstance(entry.get("config"), dict)
+            and isinstance(entry["config"].get("name"), str)
+            and isinstance(entry["config"].get("base_path"), str)
+            and entry["config"]["name"]
+            and entry["config"]["base_path"]
+        ]
+        names = {entry["config"]["name"] for entry in entries}
+        defaults = (
+            (settings.ov_chat_model, chat["repo"]),
+            (settings.embedding_model, EMBED_MODEL["repo"]),
+        )
+        for name, base_path in defaults:
+            if name not in names:
+                entries.append({"config": {"name": name, "base_path": base_path}})
+        cfg["model_config_list"] = entries
+        if path.is_file() and cfg == original:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        ovms_runner.write_atomic(path, json.dumps(cfg, indent=4))
+    log.info("created default OVMS model config at %s", path)
+
+
+def _run_bootstrap() -> None:
+    """Keep repairing/downloading/restarting until the packaged app has a usable local model engine."""
+    while True:
+        try:
+            _bootstrap.update(status="checking", detail="Checking the local model engine…")
+            ovms_home = ovms_runner.ovms_dir()
+            missing = [
+                path for path in (ovms_home / "ovms.exe", ovms_home / "setupvars.ps1")
+                if not path.is_file()
+            ]
+            if ovms_runner.python_stdlib_dir(ovms_home) is None:
+                missing.append(ovms_home / "python")
+            if missing:
+                detail = f"Bundled or installed OVMS is incomplete at {ovms_home}; missing {', '.join(map(str, missing))}."
+                log.error(detail)
+                _bootstrap.update(status="retrying", detail=f"{detail} Retrying automatically.")
+                time.sleep(30)
+                continue
+
+            model_root = models_dir()
+            model_root.mkdir(parents=True, exist_ok=True)
+            (settings.data_dir / "ovms" / "cache").mkdir(parents=True, exist_ok=True)
+            _ensure_default_config()
+
+            pending = plan(ram.status()["total_mb"])
+            if pending:
+                _bootstrap.update(status="downloading", detail="Downloading the local models. This can take a while.")
+                log.info("automatic OpenVINO setup needs %s", ", ".join(item["name"] for item in pending))
+                job = start_pull(pending)
+                while job["status"] == "running":
+                    time.sleep(1)
+                    job = dict(_job)
+                if job["status"] != "done":
+                    detail = job.get("detail") or "The model download did not finish."
+                    log.error("automatic OpenVINO model setup failed: %s", detail)
+                    _bootstrap.update(status="retrying", detail=f"{detail} Retrying automatically.")
+                    time.sleep(30)
+                    continue
+
+            _bootstrap.update(status="starting", detail="Starting OpenVINO and loading the models…")
+            ready = ovms_runner.ensure_running()
+            if ready["status"] == "running":
+                _bootstrap.update(status="ready", detail="")
+                log.info("automatic OpenVINO setup is ready")
+                return
+
+            detail = ready.get("detail") or "OpenVINO is not ready yet."
+            log.error("automatic OpenVINO startup failed: %s", detail)
+            _bootstrap.update(status="retrying", detail=f"{detail} Retrying automatically.")
+            time.sleep(15)
+        except Exception as exc:
+            log.exception("automatic OpenVINO setup failed")
+            _bootstrap.update(status="retrying", detail=f"OpenVINO setup hit an error: {exc}. Retrying automatically.")
+            time.sleep(30)
+
+
+def start_bootstrap() -> None:
+    """Starts the packaged Windows first-run setup once; development keeps its existing manual setup flow."""
+    global _bootstrap_thread
+    with _bootstrap_lock:
+        if _bootstrap_thread and _bootstrap_thread.is_alive():
+            return
+        _bootstrap.update(status="checking", detail="Checking the local model engine…")
+        _bootstrap_thread = threading.Thread(target=_run_bootstrap, name="openvino-bootstrap", daemon=True)
+        _bootstrap_thread.start()
+
+
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
@@ -290,6 +399,7 @@ def get_status():
             "source": "huggingface.co",
             "pull": dict(_job),
         },
+        "bootstrap": dict(_bootstrap),
         "folders": {"pc_access": pc["enabled"], "drives": pc["drives"]},
         "memory": mem,
         "missing": missing,
