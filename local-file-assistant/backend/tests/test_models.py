@@ -23,6 +23,7 @@ def c(monkeypatch, tmp_path):
         d = routes_setup.models_dir() / repo
         d.mkdir(parents=True)
         (d / "weights.bin").write_bytes(b"x" * 2_000_000)
+        (d / "graph.pbtxt").write_text("model_config_list: []", encoding="utf-8")
         routes_setup._add_to_config(name, repo.replace("/", "\\"))
     (routes_setup.models_dir() / CHAT / "graph.pbtxt").write_text('node_options: { device: "GPU", models_path: "./" }', encoding="utf-8")
     return TestClient(app, base_url="http://127.0.0.1:8756")
@@ -43,6 +44,7 @@ def test_remove_refuses_the_models_in_use_and_deletes_another(c):
         assert r.status_code == 400 and "in use" in r.json()["detail"]
     extra = routes_setup.models_dir() / "OpenVINO/Qwen3-0.6B-int4-ov"
     extra.mkdir(parents=True)
+    (extra / "graph.pbtxt").write_text("model_config_list: []", encoding="utf-8")
     routes_setup._add_to_config("Qwen3-0.6B-int4-ov", "OpenVINO\\Qwen3-0.6B-int4-ov")
     assert c.post("/models/remove", json={"name": "Qwen3-0.6B-int4-ov"}, headers=AUTH).status_code == 200
     assert not extra.exists() and "Qwen3-0.6B-int4-ov" not in routes_setup.installed()

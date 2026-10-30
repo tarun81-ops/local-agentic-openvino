@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 // from here and can ask for a folder picker; they can't reach Node or the filesystem.
 contextBridge.exposeInMainWorld('lfa', {
   config: () => ipcRenderer.invoke('app:config'),
+  engineReady: () => ipcRenderer.invoke('app:engine-ready'),
   shortcut: () => ipcRenderer.invoke('app:shortcut'),
   pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
   pickFiles: () => ipcRenderer.invoke('dialog:pick-files'), // the chat's paperclip

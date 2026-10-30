@@ -35,7 +35,7 @@ export function renderSidebar(root, { active, onSelect, onNewChat, recent, onOpe
   const firstSetup = NAV_ITEMS.findIndex((item) => item.setup);
   const indicatorTop = activeIndex * ROW_HEIGHT + (activeIndex >= firstSetup ? RULE_HEIGHT : 0);
   root.replaceChildren(
-    el('div', { class: 'brand' }, mascot({ size: 34, flat: true }), el('div', { class: 'brand-name' }, 'Local File Assistant')),
+    el('div', { class: 'brand' }, mascot({ size: 34, flat: true }), el('div', { class: 'brand-name' }, 'Lumi AI')),
     workspaceSwitcher({ workspaces, workspace, onWorkspace, onNewWorkspace, onDeleteWorkspace }),
     el('button', { type: 'button', class: `new-chat ${active === 'chat' ? 'new-chat-primary' : ''}`, onclick: onNewChat }, '+ New chat'),
     el(

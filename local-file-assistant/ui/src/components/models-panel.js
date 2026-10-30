@@ -3,7 +3,7 @@ import { badge, el, notice } from './common.js';
 
 // Settings > Model: the models on this PC (size, expected RAM, IN USE / RECOMMENDED), the ones the app can download,
 // the device the chat model runs on (OpenVINO build only: shown when the backend reports devices) and the optional
-// other OpenAI-compatible server. Nothing switches by itself: a downloaded model is used only after USE.
+// other OpenAI-compatible server. A newly downloaded chat model is selected and started automatically.
 const gb = (mb) => `${(mb / 1000).toFixed(1)} GB`;
 
 export function modelsPanel({ onChanged }) {
@@ -55,8 +55,13 @@ export function modelsPanel({ onChanged }) {
           load();
         };
         await setupPull({
-          progress: (s) => (line.textContent = `${s.percent ?? 0}% · ${(s.mb || 0).toLocaleString()} of ${(s.total_mb || m.size_mb).toLocaleString()} MB`),
-          done: (s) => end({ ...s, detail: `${m.label} is downloaded. Click USE to answer with it.` }, true),
+          progress: (s) => {
+            line.textContent = s.phase === 'starting'
+              ? s.detail
+              : `${s.percent ?? 0}% · ${(s.mb || 0).toLocaleString()} of ${(s.total_mb || m.size_mb).toLocaleString()} MB`;
+            cancel.hidden = s.phase === 'starting';
+          },
+          done: (s) => end(s, true),
           failed: (s) => end(s, false),
           cancelled: (s) => end(s, false),
           error: (s) => end(s, false),

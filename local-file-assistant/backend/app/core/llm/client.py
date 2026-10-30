@@ -169,9 +169,22 @@ def llm_json(prompt: str, max_tokens: int = 300, local: bool = True) -> dict:
 
 def server_status() -> dict:
     """Whether OpenVINO Model Server answers, and which models it serves."""
+    required_model = current_model(local=True)
     try:
         r = httpx.get(f"{settings.ov_base_url.rstrip('/')}/models", timeout=3)
         r.raise_for_status()
-        return {"connected": True, "models": sorted(m["id"] for m in r.json().get("data", []))}
+        models = sorted(m["id"] for m in r.json().get("data", []))
+        return {
+            "connected": True,
+            "models": models,
+            "required_model": required_model,
+            "required_model_available": required_model in models,
+        }
     except Exception as exc:
-        return {"connected": False, "models": [], "error": str(exc)}
+        return {
+            "connected": False,
+            "models": [],
+            "required_model": required_model,
+            "required_model_available": False,
+            "error": str(exc),
+        }

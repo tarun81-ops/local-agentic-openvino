@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -63,10 +64,15 @@ def _port() -> int:
     return urlparse(settings.ov_base_url).port or 8000
 
 
-def _up() -> bool:
+def _probe() -> dict:
     from app.core.llm.client import server_status
 
-    return bool(server_status().get("connected"))
+    return server_status()
+
+
+def _up() -> bool:
+    result = _probe()
+    return bool(result.get("connected") and result.get("required_model_available"))
 
 
 def ps_quote(p) -> str:
@@ -74,11 +80,41 @@ def ps_quote(p) -> str:
     return "'" + str(p).replace("'", "''") + "'"
 
 
+def python_stdlib_dir(directory: Path | None = None) -> Path | None:
+    """Finds the versioned standard-library folder in OVMS's embedded Python runtime."""
+    root = (directory or ovms_dir()) / "python"
+    try:
+        return next(
+            (p for p in sorted(root.glob("python3*")) if (p / "encodings").is_dir()),
+            None,
+        )
+    except OSError:
+        return None
+
+
 def ovms_command(args: str) -> list[str]:
     """PowerShell runs OVMS's own setupvars.ps1 first (DLL and Python paths), then ovms.exe with args."""
     d = ovms_dir()
-    script = f"& {ps_quote(d / 'setupvars.ps1')} | Out-Null; & {ps_quote(d / 'ovms.exe')} {args}"
-    return ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script]
+    setup = d / "setupvars.ps1"
+    exe = d / "ovms.exe"
+    python_stdlib = python_stdlib_dir(d)
+    if not setup.is_file():
+        raise FileNotFoundError(f"OVMS setup script not found: {setup}")
+    if not exe.is_file():
+        raise FileNotFoundError(f"OVMS executable not found: {exe}")
+    if python_stdlib is None:
+        raise FileNotFoundError(f"OVMS Python standard library not found under {d / 'python'}")
+    script = (
+        f"$ErrorActionPreference = 'Stop'; "
+        f"try {{ . {ps_quote(setup)} | Out-Null; "
+        f"$env:PYTHONPATH = {ps_quote(python_stdlib)}; "
+        f"& {ps_quote(exe)} {args}; $code = $LASTEXITCODE; exit $code }} "
+        f"catch {{ [Console]::Error.WriteLine($_); exit 1 }}"
+    )
+    system_root = os.environ.get("SystemRoot")
+    powershell = Path(system_root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe" if system_root else None
+    executable = str(powershell) if powershell and powershell.is_file() else shutil.which("powershell.exe") or "powershell.exe"
+    return [executable, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script]
 
 
 def command() -> list[str]:
@@ -115,46 +151,87 @@ def resolve_device(choice: str) -> str:
     return "GPU" if "GPU" in available_devices() else "CPU"
 
 
-def ensure_running(wait_s: float = 90) -> dict:
-    """Starts OVMS if it isn't answering and can be started; waits up to wait_s for it. Never raises."""
+def ensure_running(wait_s: float | None = None) -> dict:
+    """Starts OVMS if it isn't answering and can be started; waits for the selected model. Never raises."""
     global _proc
     if not settings.ovms_autostart:
         _state.update(status="off", detail="OVMS_AUTOSTART is false")
         return status()
+    wait_s = settings.ovms_startup_timeout_s if wait_s is None else wait_s
     with _lock:
         try:
-            if _up():
+            probe = _probe()
+            if probe.get("connected") and probe.get("required_model_available"):
                 _state.update(status="running", detail="")
                 return status()
             if sys.platform != "win32":
                 _state.update(status="missing", detail="start OpenVINO Model Server yourself (docs/OPENVINO.md)")
                 return status()
+            owned_proc_running = _proc is not None and _proc.poll() is None
+            if probe.get("connected") and not owned_proc_running:
+                model = probe.get("required_model") or settings.ov_chat_model
+                _state.update(
+                    status="failed",
+                    detail=f"OpenVINO Model Server responds, but the selected model '{model}' is not available. Check the model repository and config.json.",
+                )
+                return status()
             exe, cfg = ovms_dir() / "ovms.exe", config_path()
             if not exe.is_file():
                 _state.update(status="missing", detail=f"ovms.exe not found in {exe.parent}")
                 return status()
+            if not (ovms_dir() / "setupvars.ps1").is_file():
+                _state.update(status="missing", detail=f"setupvars.ps1 not found in {ovms_dir()}")
+                return status()
+            if python_stdlib_dir() is None:
+                _state.update(status="missing", detail=f"OVMS Python standard library not found under {ovms_dir() / 'python'}")
+                return status()
             if not cfg.is_file():
                 _state.update(status="missing", detail=f"no models yet: {cfg} is missing")
                 return status()
-            if _proc is None or _proc.poll() is not None:
+            if not owned_proc_running:
                 (settings.data_dir / "ovms" / "cache").mkdir(parents=True, exist_ok=True)
                 logs = settings.data_dir / "logs"
                 logs.mkdir(parents=True, exist_ok=True)
-                out = open(logs / "ovms.log", "ab")
-                _proc = subprocess.Popen(command(), stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                child_env = os.environ.copy()
+                for key in tuple(child_env):
+                    if key.upper().startswith(("PYTHON", "_PYI_")):
+                        child_env.pop(key)
+                with open(logs / "ovms.log", "ab") as out:
+                    _proc = subprocess.Popen(
+                        command(),
+                        cwd=str(ovms_dir()),
+                        env=child_env,
+                        stdout=out,
+                        stderr=subprocess.STDOUT,
+                        stdin=subprocess.DEVNULL,
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    )
                 log.info("started OpenVINO Model Server (pid %s)", _proc.pid)
             _state.update(status="starting", detail="loading the models (first start compiles them, up to a minute)")
             deadline = time.monotonic() + wait_s
             while time.monotonic() < deadline:
                 if _proc.poll() is not None:
-                    _state.update(status="failed", detail=f"OVMS exited with code {_proc.returncode}; see logs\\ovms.log")
+                    _state.update(
+                        status="failed",
+                        detail=f"OVMS exited with code {_proc.returncode}; stdout and stderr are in {settings.data_dir / 'logs' / 'ovms.log'}",
+                    )
                     return status()
-                if _up():
+                probe = _probe()
+                if probe.get("connected") and probe.get("required_model_available"):
                     _state.update(status="running", detail="")
                     return status()
                 time.sleep(1)
-            return status()  # still starting; a later check will see it
+            if probe.get("connected"):
+                model = probe.get("required_model") or settings.ov_chat_model
+                detail = f"OVMS responds, but the selected model '{model}' did not become available within {wait_s}s."
+            else:
+                detail = f"OVMS API did not become ready within {wait_s}s."
+                if probe.get("error"):
+                    detail += f" Last probe: {probe['error']}"
+            detail += f" See {settings.data_dir / 'logs' / 'ovms.log'} for server output."
+            _state.update(status="failed", detail=detail)
+            log.error("OpenVINO Model Server startup failed: %s", detail)
+            return status()
         except Exception as exc:
             log.exception("could not start OVMS")
             _state.update(status="failed", detail=str(exc))
@@ -173,7 +250,16 @@ def stop() -> None:
         return
     try:
         if sys.platform == "win32":
-            subprocess.run(["taskkill", "/pid", str(_proc.pid), "/T", "/F"], capture_output=True, timeout=10)
+            result = subprocess.run(
+                ["taskkill", "/pid", str(_proc.pid), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode:
+                log.warning("taskkill could not stop OVMS process tree (pid %s): %s", _proc.pid, result.stderr.strip())
+            else:
+                log.info("stopped OpenVINO Model Server process tree (pid %s)", _proc.pid)
         else:
             _proc.terminate()
     except Exception:

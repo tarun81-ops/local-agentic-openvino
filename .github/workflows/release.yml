@@ -111,7 +111,7 @@ jobs:
             gh release upload $env:TAG @files --clobber --repo $env:GITHUB_REPOSITORY
           } else {
             $notes = "docs/releases/$($env:TAG.TrimStart('v')).md"
-            $args = @("release", "create", $env:TAG) + $files + @("--repo", $env:GITHUB_REPOSITORY, "--title", "Local File Assistant (OpenVINO) $env:TAG", "--target", $env:GITHUB_SHA)
+            $args = @("release", "create", $env:TAG) + $files + @("--repo", $env:GITHUB_REPOSITORY, "--title", "Lumi AI (OpenVINO) $env:TAG", "--target", $env:GITHUB_SHA)
             if (Test-Path "$env:GITHUB_WORKSPACE\local-file-assistant\$notes") { $args += @("--notes-file", "$env:GITHUB_WORKSPACE\local-file-assistant\$notes") } else { $args += @("--generate-notes") }
             gh @args
           }

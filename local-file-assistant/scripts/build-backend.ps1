@@ -50,7 +50,8 @@ if ($model) {
 }
 
 # OpenVINO build: the installer ships OpenVINO Model Server too (ui\package.json extraResources -> resources\ovms), so
-# nobody installs it separately. Models are not bundled: the setup wizard downloads them. OVMS_DIR picks another copy.
+# nobody installs it separately. The packaged app downloads missing models automatically on first launch. OVMS_DIR
+# picks another copy.
 $ovmsSrc = if ($env:OVMS_DIR) { $env:OVMS_DIR } else { Join-Path $env:LOCALAPPDATA "ovms" }
 if (-not (Test-Path (Join-Path $ovmsSrc "ovms.exe"))) { throw "ovms.exe not found in $ovmsSrc. Unzip the OVMS release there (docs\OPENVINO.md) or set OVMS_DIR." }
 $ovmsDst = "$root\backend\dist\ovms"

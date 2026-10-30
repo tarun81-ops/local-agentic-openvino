@@ -25,6 +25,7 @@ const START_HIDDEN = process.argv.includes('--hidden'); // launched at login: li
 // launches at login and sits in the tray under the same default folder name, so without this a
 // dev launch finds the lock taken and quits at once. Must run before requestSingleInstanceLock().
 if (IS_DEV) app.setPath('userData', path.join(app.getPath('appData'), 'local-file-assistant-ui-dev'));
+else app.setPath('userData', path.join(app.getPath('appData'), 'Local File Assistant')); // the app is now "Lumi AI"; keep the old data folder so existing installs keep their settings and index
 const DEV_SERVER_URL = 'http://localhost:5173';
 const API_TOKEN = crypto.randomBytes(32).toString('hex');
 
@@ -45,6 +46,7 @@ const dragAllowed = new Set(); // paths the panel was just offered and may drag 
 let quitting = false;
 let restarts = 0;
 const MAX_RESTARTS = 3;
+let modelEngineReady = !app.isPackaged || !IS_WIN;
 
 // ---------- logging ----------
 // The packaged app has no console, so main-process errors and everything the backend prints
@@ -109,7 +111,7 @@ function startBackend() {
   }
   const child = spawn(cmd, args, {
     cwd,
-    env: { ...process.env, PORT: String(port), API_TOKEN },
+    env: { ...process.env, PORT: String(port), API_TOKEN, LFA_ELECTRON_PACKAGED: app.isPackaged && IS_WIN ? '1' : '0' },
     windowsHide: true,
   });
   backend = child;
@@ -169,7 +171,7 @@ function createMainWindow() {
     height: 860,
     minWidth: 980,
     minHeight: 640,
-    title: 'Local File Assistant',
+    title: 'Lumi AI',
     backgroundColor: '#F5F3EE',
     icon: path.join(__dirname, 'app-icon.png'),
     show: false,
@@ -294,6 +296,10 @@ async function captureContext() {
 }
 
 async function showOverlay() {
+  if (!modelEngineReady) {
+    showMain();
+    return;
+  }
   if (summoning) return;
   summoning = true;
   try {
@@ -320,10 +326,10 @@ function toggleOverlay() {
 
 function createTray() {
   tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'tray.png')));
-  tray.setToolTip('Local File Assistant');
+  tray.setToolTip('Lumi AI');
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: 'Open Local File Assistant', click: () => showMain() },
+      { label: 'Open Lumi AI', click: () => showMain() },
       { label: `Search files (${shortcutLabel()})`, click: showOverlay },
       { type: 'separator' },
       { label: 'Quit', click: () => app.quit() },
@@ -449,7 +455,11 @@ function allowMicrophone() {
 
 // ---------- IPC ----------
 
-ipcMain.handle('app:config', () => ({ port, token: API_TOKEN }));
+ipcMain.handle('app:config', () => ({ port, token: API_TOKEN, autoBootstrap: app.isPackaged && IS_WIN }));
+ipcMain.handle('app:engine-ready', () => {
+  modelEngineReady = true;
+  return true;
+});
 ipcMain.handle('app:shortcut', () => shortcutLabel());
 ipcMain.handle('app:shortcuts', () => ({ toggle: shortcutLabel(), voice: label(voiceShortcut) }));
 ipcMain.handle('shortcuts:set', (_e, { which, accelerator }) => setShortcut(which === 'voice' ? 'voice' : 'toggle', String(accelerator || '').trim()));

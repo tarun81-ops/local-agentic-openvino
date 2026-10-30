@@ -344,15 +344,23 @@ def _model_error(exc: Exception) -> str:
 
     text = str(exc).lower()
     if getattr(exc, "status_code", None) == 404 or "definition with requested name is not found" in text:
-        # OVMS answers before its models are loaded (the first minute after a start), or the picked model isn't served.
+        from app.core.llm.client import server_status
+
+        probe = server_status()
+        if probe["connected"] and not probe["required_model_available"] and ovms_runner.status()["status"] != "starting":
+            return (
+                f"OpenVINO Model Server responds, but the selected model '{probe['required_model']}' is not available. "
+                "Check the model repository and config.json, then restart OVMS."
+            )
+        # OVMS may answer before its models finish loading; retrying shortly is appropriate only during startup.
         return ("The model is still loading (the first start can take a minute). Ask again shortly. If this keeps "
                 "happening, open Settings > Model and click USE on an installed model.")
     if "connect" not in text and "refused" not in text:
         return f"The local model didn't answer: {exc}"
-    before = ovms_runner.status()["status"]
+    before = ovms_runner.status()
     ovms_runner.ensure_running_async()
-    if before == "missing" or not settings.ovms_autostart:
-        detail = ovms_runner.status()["detail"] or "start it with scripts\\ovms-start.ps1"
+    if before["status"] in {"missing", "failed"} or not settings.ovms_autostart:
+        detail = before["detail"] or "start it with scripts\\ovms-start.ps1"
         return f"The model server (OpenVINO) isn't running: {detail}."
     return "The model server (OpenVINO) wasn't running, so I'm starting it now. Ask again in about a minute."
 

@@ -170,12 +170,12 @@ function show(page, { chatId, prefill } = {}) {
 
 async function boot() {
   drawSidebar();
-  const title = [...'Local File Assistant'].map((ch, i) => el('span', { style: `--i:${i}` }, ch));
+  const title = [...'Lumi AI'].map((ch, i) => el('span', { style: `--i:${i}` }, ch));
   content.replaceChildren(
     el('div', { class: 'boot splash' },
       el('div', { class: 'splash-burst', 'aria-hidden': 'true' }),
       mascot({ size: 132, mood: 'listening', label: 'Lumi, your local file assistant' }),
-      el('div', { class: 'splash-title', role: 'heading', 'aria-level': '1', 'aria-label': 'Local File Assistant' }, title),
+      el('div', { class: 'splash-title', role: 'heading', 'aria-level': '1', 'aria-label': 'Lumi AI' }, title),
       el('div', { class: 'splash-sub' }, 'Starting the local backend… the first start can take a minute'),
     ),
   );
@@ -191,11 +191,36 @@ async function boot() {
     );
     return;
   }
+  const appConfig = await window.lfa.config();
+  if (appConfig.autoBootstrap) {
+    const sub = content.querySelector('.splash-sub');
+    sub.textContent = 'Setting up OpenVINO… Preparing your local model engine.';
+    for (;;) {
+      try {
+        const setup = await api.setupStatus();
+        if (setup.engine.state === 'ready' && setup.missing.length === 0) break;
+        const pull = setup.model.pull;
+        if (pull.status === 'running') {
+          sub.textContent = pull.phase === 'starting'
+            ? pull.detail || 'Downloaded. Starting OpenVINO and loading the models…'
+            : `Downloading ${pull.model || 'your local models'}… ${pull.percent ?? 0}%`;
+        } else if (setup.bootstrap.status === 'retrying') {
+          sub.textContent = setup.bootstrap.detail || 'OpenVINO is having trouble starting. Retrying automatically.';
+        } else {
+          sub.textContent = setup.bootstrap.detail || 'Preparing your local model engine. This can take a few minutes on first launch.';
+        }
+      } catch (e) {
+        sub.textContent = `Preparing your local model engine… ${e.message}`;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+    await window.lfa.engineReady();
+  }
   loadAppearance();
   await importOldChats();
   state.ready = true;
   try {
-    if (!(await api.setupStatus()).done) state.page = 'setup'; // first launch: the setup wizard
+    if (!appConfig.autoBootstrap && !(await api.setupStatus()).done) state.page = 'setup'; // dev and other packages keep setup
   } catch { /* setup stays reachable from Settings */ }
   show(state.page, { prefill: state.prefill });
   refreshRecent();

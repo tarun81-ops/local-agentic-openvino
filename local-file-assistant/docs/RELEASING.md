@@ -17,7 +17,7 @@ npm test           # the update rules (electron\updates.js)
 npm run build      # web UI, frozen backend + smoke test, OVMS copied in, NSIS installer
 ```
 
-`ui\release\` then holds `LocalFileAssistant-OpenVINO-Setup-<version>.exe`, its `.blockmap`, and `latest.yml`
+`ui\release\` then holds `LumiAI-OpenVINO-Setup-<version>.exe`, its `.blockmap`, and `latest.yml`
 (the version and SHA-512 the installed apps check before installing). OVMS is inside the installer; the models
 are not, the setup wizard downloads them.
 
@@ -48,7 +48,7 @@ electron-builder's default for GitHub). Open the repo's Releases page, paste the
 prereleases are never offered to them.
 
 The three files, if you prefer to upload them by hand to a draft release instead (no token in the shell):
-`ui\release\LocalFileAssistant-OpenVINO-Setup-<version>.exe`, `ui\release\LocalFileAssistant-OpenVINO-Setup-<version>.exe.blockmap` and
+`ui\release\LumiAI-OpenVINO-Setup-<version>.exe`, `ui\release\LumiAI-OpenVINO-Setup-<version>.exe.blockmap` and
 `ui\release\latest.yml`. Upload all three: an installed app reads `latest.yml` first and refuses an installer
 whose SHA-512 doesn't match it.
 
